@@ -25,12 +25,14 @@ const read = async (filename: string): Promise<mWarcReadFunction> => {
 export const parseWarcFiles = async () => {
     console.log("Parsing warc files...");
 
+    /*
     const mpd = new MultiProgressBars({
         initMessage: "$ Parsing files...",
         anchor: 'top',
         persist: true,
         border: true,
     })
+    */
 
     try {
         const files = (await fs.readdir("warcs/")).filter(file => file.endsWith('.warc'));
@@ -78,7 +80,7 @@ export const parseWarcFiles = async () => {
                     //if(responseContentLength == null)
                     //console.log(targetUri, responseContentLength);;
 
-                    //console.log(responseType);
+                    console.log(targetUri);
 
                     dbInsertResponse(
                         targetUri.replace(/<|>/g, ''),                                          //uri: string, 
@@ -96,10 +98,10 @@ export const parseWarcFiles = async () => {
                         const percent = Math.round((Number(recordWarcOffset) / fileSize)*100);
 
                         if(percent > lastPercent) {
-                            mpd.updateTask(file, {percentage: percent/100})
+                            //mpd.updateTask(file, {percentage: percent/100})
                             lastPercent = percent;
+                            console.log(file, percent)
                         }
-                        //console.log(file, Number(responseContentLength), fileSize)
                     });
                 }
                 console.log(`   Parsed ${file}!`);
