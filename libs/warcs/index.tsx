@@ -44,7 +44,7 @@ export const parseWarcFiles = async () => {
 
                 console.log(`   Parsing ${file}...`);
 
-                mpd.addTask(file, { type: 'percentage' });
+                //mpd.addTask(file, { type: 'percentage' });
 
                 const fileSize = (await fs.stat(`warcs/${file}`)).size;
                 let lastPercent = 0;
