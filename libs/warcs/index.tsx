@@ -45,6 +45,7 @@ export const parseWarcFiles = async () => {
                 mpd.addTask(file, { type: 'percentage' });
 
                 const fileSize = (await fs.stat(`warcs/${file}`)).size;
+                let lastPercent = 0;
 
                 for await (const [header, http, content, metadata] of warc) {
                     const {
@@ -92,7 +93,12 @@ export const parseWarcFiles = async () => {
                         status,                                                //status: number
                         transferEncoding,
                     ).then(()=>{
-                        mpd.updateTask(file, {percentage: (Number(recordWarcOffset) / fileSize)})
+                        const percent = Math.round((Number(recordWarcOffset) / fileSize)*100);
+
+                        if(percent > lastPercent) {
+                            mpd.updateTask(file, {percentage: percent/100})
+                            lastPercent = percent;
+                        }
                         //console.log(file, Number(responseContentLength), fileSize)
                     });
                 }
