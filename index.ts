@@ -4,8 +4,8 @@ import { listenExpress, setupExpress } from "./libs/express";
 import { parseWarcFiles } from "./libs/warcs";
 
 await connectDb();
-//await setupDb();
+await setupDb();
 
-//parseWarcFiles();
+parseWarcFiles();
 
 await listenExpress();

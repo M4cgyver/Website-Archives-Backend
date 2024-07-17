@@ -1,3 +1,4 @@
+import { MultiProgressBars } from 'multi-progress-bars';
 import fs from 'fs/promises';
 import { splitArrayIntoFour } from '../array';
 import { open } from 'fs/promises';
@@ -23,7 +24,14 @@ const read = async (filename: string): Promise<mWarcReadFunction> => {
 
 export const parseWarcFiles = async () => {
     console.log("Parsing warc files...");
-    
+
+    const mpd = new MultiProgressBars({
+        initMessage: "$ Parsing files...",
+        anchor: 'top',
+        persist: true,
+        border: true,
+    })
+
     try {
         const files = (await fs.readdir("warcs/")).filter(file => file.endsWith('.warc'));
         const filesspit = splitArrayIntoFour(files);
@@ -33,6 +41,10 @@ export const parseWarcFiles = async () => {
                 const warc = mWarcParseResponses(await read(`warcs/${file}`), { skipContent: true });
 
                 console.log(`   Parsing ${file}...`);
+
+                mpd.addTask(file, { type: 'percentage' });
+
+                const fileSize = (await fs.stat(`warcs/${file}`)).size;
 
                 for await (const [header, http, content, metadata] of warc) {
                     const {
@@ -79,7 +91,10 @@ export const parseWarcFiles = async () => {
                         (date) ? new Date(date) : null,                     //date: string, 
                         status,                                                //status: number
                         transferEncoding,
-                    );
+                    ).then(()=>{
+                        mpd.updateTask(file, {percentage: (Number(recordWarcOffset) / fileSize)})
+                        //console.log(file, Number(responseContentLength), fileSize)
+                    });
                 }
                 console.log(`   Parsed ${file}!`);
             }

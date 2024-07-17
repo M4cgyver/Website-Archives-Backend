@@ -39,7 +39,7 @@ export const search = (req: Request, res: Response) => {
     // Call the database function to retrieve responses
     dbRetrieveResponses(uri, undefined, totalEntries, pageNumber, status, type)
         .then((data: any) => {
-            console.log(data);
+            //console.log(data);
             res.json(data); // Return the retrieved responses as JSON
         })
         .catch((error: any) => {
