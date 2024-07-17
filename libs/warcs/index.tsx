@@ -80,7 +80,7 @@ export const parseWarcFiles = async () => {
 
                     //console.log(responseType);
 
-                    dbInsertResponse(
+                    await dbInsertResponse(
                         targetUri.replace(/<|>/g, ''),                                          //uri: string, 
                         location,                                           //location: string, 
                         responseType,                                           //type: string, 
