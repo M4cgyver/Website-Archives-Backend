@@ -1,7 +1,8 @@
 import express, { Request, Response } from "express";
 import { view } from "./view";
 import { search } from "./search";
-import { statistics } from "./statistics";
+import { statistics } from "./statistics/index";
+import { latest } from "./statistics/latest";
 
 let app: express.Application | undefined = undefined;
 
@@ -11,9 +12,11 @@ export const setupExpress = () => {
     app = express();
 
     // Define your route
-    app.get("/api/statistics", statistics);
     app.get("/api/search", search);
     app.get("/api/view", view);
+
+    app.get("/api/statistics", statistics);
+    app.get("/api/statistics/latest", latest);
 
 };
 

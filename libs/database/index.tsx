@@ -108,3 +108,24 @@ export const dbRetrieveResponses = async (
         throw err;
     } 
 };
+
+// Function to retrieve latest responses
+export const dbRetrieveLatestResponses = async (
+    limit: bigint | number = 20n
+): Promise<any> => {
+    const client = await connectDb();
+
+    const query = `
+        SELECT * FROM retrieve_latest_responses($1);
+    `;
+
+    const values = [BigInt(limit)];
+
+    try {
+        const { rows } = await client.query(query, values);
+        return rows;
+    } catch (err) {
+        console.error('Failed to retrieve latest responses', err);
+        throw err;
+    }
+};

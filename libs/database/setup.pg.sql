@@ -234,3 +234,36 @@ BEGIN
         ((_page - 1) * _limit)::INT; -- Cast the OFFSET to INT for better performance
 END;
 $$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION retrieve_latest_responses(
+    _limit BIGINT DEFAULT 20
+)
+RETURNS TABLE (
+    uri TEXT,
+    last_modified TIMESTAMP WITH TIME ZONE,
+    date TIMESTAMP WITH TIME ZONE,
+    filename TEXT
+) AS $$
+BEGIN
+    RETURN QUERY 
+    SELECT 
+        u.uri AS uri,
+        r.last_modified,
+        r.date,
+        f.filename
+    FROM 
+        responses r
+    JOIN 
+        uris u ON r.uri_id = u.id
+    JOIN 
+        types t ON r.type_id = t.id
+    JOIN 
+        files f ON r.filename_id = f.id
+    WHERE 
+        t.type ILIKE '%text/html%'
+        AND r.status = 200
+    ORDER BY 
+        r.date DESC
+    LIMIT _limit;
+END;
+$$ LANGUAGE plpgsql;
