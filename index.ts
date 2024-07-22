@@ -3,6 +3,8 @@ import { connectDb, setupDb } from "./libs/database";
 import { listenExpress, setupExpress } from "./libs/express";
 import { parseWarcFiles } from "./libs/warcs";
 
+console.log("starting api");
+
 await connectDb();
 await setupDb();
 

@@ -75,7 +75,7 @@ export const view = async (req: Request, res: Response) => {
             });
 
             promise.then((str: any) => {
-                return httpRedirect(str, targetUri, "http://localhost:4002/api/view?redirect=true", contentType);
+                return httpRedirect(str, targetUri, process.env.REDIRECT_BASE_URL  ?? "https://redirect-url-not-defined", contentType);
             }).then(parsed => {
                 res.send(parsed);
             });

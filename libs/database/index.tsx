@@ -6,6 +6,7 @@ let globalDbClient: Client | null = null;
 
 export const connectDb = async (retries: number = 5): Promise<Client> => {
     if (!globalDbClient) {
+        console.log("connecting to db...");
         // Initialize the client if it hasn't been initialized yet
         globalDbClient = new Client({
             user: 'bun_user', // Username for PostgreSQL connection

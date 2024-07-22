@@ -5,24 +5,8 @@ import { open } from 'fs/promises';
 import { mWarcParse, mWarcParseResponses, type mWarcReadFunction } from '../mwarcparser';
 import { dbInsertResponse } from '../database';
 
-const read = async (filename: string): Promise<mWarcReadFunction> => {
-    const fd = await open(filename, 'r');
-    const fileStats = await fd.stat();
-    const fileSize = fileStats.size;
-
-    return async (offset: bigint, size: bigint): Promise<Buffer> => {
-        if (offset >= fileSize || offset + size > fileSize) {
-            throw new RangeError('Out of bounds read attempt');
-        }
-
-        const buffer = Buffer.alloc(Number(size));
-        const { bytesRead } = await fd.read(buffer, 0, Number(size), Number(offset));
-        //console.log("read", offset, size);
-        return buffer;
-    };
-}
-
 export const parseWarcFiles = async () => {
+    /*
     console.log("Parsing warc files...");
 
     const mpd = new MultiProgressBars({
@@ -108,4 +92,33 @@ export const parseWarcFiles = async () => {
     } catch (error) {
         console.error('Error occurred while parsing WARC files:', error);
     }
+    */
+
+    const workers: Worker[] = [];
+    const files = (await fs.readdir("warcs/")).filter(file => file.endsWith('.warc'));
+
+    const mpd = new MultiProgressBars({
+        initMessage: "$ Parsing files...",
+        anchor: 'top',
+        persist: true,
+        border: true,
+    })
+
+    files.forEach(file => {
+        mpd.addTask(file, { type: 'percentage' });
+
+        const worker = new Worker("libs/warcs/worker.ts");
+
+        worker.onmessage = event => {
+            const { file, status, progress } = event.data;
+            
+            if(status == "progress")
+                mpd.updateTask(file, {percentage: progress/100})
+            else if (status == "complete") 
+                mpd.updateTask(file, {percentage: 1})    
+        }
+
+        worker.postMessage({ file: file });
+        workers.push(worker);
+    })
 }
