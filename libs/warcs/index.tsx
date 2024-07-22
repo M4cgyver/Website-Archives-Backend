@@ -95,7 +95,7 @@ export const parseWarcFiles = async () => {
     */
 
     const workers: Worker[] = [];
-    const files = (await fs.readdir("warcs/")).filter(file => file.endsWith('.warc'));
+    const files = (await fs.readdir("warcs/")).filter(file => file.endsWith('.warc')).sort();
 
     const mpd = new MultiProgressBars({
         initMessage: "$ Parsing files...",
