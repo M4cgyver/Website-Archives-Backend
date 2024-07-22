@@ -8,6 +8,8 @@ import { dbInsertResponse } from '../database';
 // prevents TS errors
 declare var self: Worker;
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 const read = async (filename: string): Promise<mWarcReadFunction> => {
     const fd = await open(filename, 'r');
     const fileStats = await fd.stat();
@@ -91,6 +93,8 @@ const parseWarcFile = async (file: string) => {
             }
             //console.log(file, Number(responseContentLength), fileSize)
         });
+
+        await sleep(1);
     }
 
     console.log(`   Parsed ${file}!`);
