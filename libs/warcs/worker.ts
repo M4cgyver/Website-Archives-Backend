@@ -96,7 +96,7 @@ const parseWarcFile = async (file: string) => {
             }).catch(() => {
                 console.log(`WARC Worker ${file}: error on ${targetUri.replace(/<|>/g, '')}`,
                     location,                                           //location: string, 
-                    responseType ?? "text/html",                        //type: string, 
+                    responseType ?? "text/text",                        //type: string, 
                     `warcs/${file}`,                                    //filename: string, 
                     recordWarcOffset,                                   //offsetHeader: bigint, 
                     recordContentOffset,                                //offsetContent: bigint, 

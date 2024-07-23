@@ -263,7 +263,7 @@ BEGIN
         t.type ILIKE '%text/html%'
         AND r.status = 200
     ORDER BY 
-        r.id DESC
+        r.date DESC
     LIMIT _limit;
 END;
 $$ LANGUAGE plpgsql;
