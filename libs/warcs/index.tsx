@@ -104,6 +104,7 @@ export const parseWarcFiles = async () => {
         border: true,
     })
 
+    /*
     files.forEach(file => {
         mpd.addTask(file, { type: 'percentage' });
 
@@ -120,5 +121,34 @@ export const parseWarcFiles = async () => {
 
         worker.postMessage({ file: file });
         workers.push(worker);
-    })
+    }) */
+
+    const startWorker = async (file:string) => {
+        mpd.addTask(file, { type: 'percentage' });
+
+        const worker = new Worker("libs/warcs/worker.ts");
+
+        worker.onmessage = event => {
+            const { file, status, progress } = event.data;
+            
+            if(status == "progress")
+                mpd.updateTask(file, {percentage: progress/100})
+            else if (status == "complete") {
+                mpd.updateTask(file, {percentage: 1})
+                
+                const nextFile = files.pop();
+
+                if(nextFile)
+                    startWorker(nextFile);
+            }     
+        }
+
+        worker.postMessage({ file: file });
+        workers.push(worker);
+
+        return worker;
+    }
+
+    for(let file = files.pop(); file && workers.length < (parseInt(process.env.MAX_PARRALLEL_WARC_PROCESSING ?? '4') ?? 4); file = files.pop() ) 
+        await startWorker(file);
 }
