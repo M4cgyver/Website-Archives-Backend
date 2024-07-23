@@ -92,6 +92,19 @@ const parseWarcFile = async (file: string) => {
                 postMessage({ file: file, status: "progress", progress: percent });
             }
             //console.log(file, Number(responseContentLength), fileSize)
+        }).catch(()=>{
+            console.log(`WARC Worker: error on ${targetUri.replace(/<|>/g, '')}`,                       
+            location,                                           //location: string, 
+            responseType,                                       //type: string, 
+            `warcs/${file}`,                                    //filename: string, 
+            recordWarcOffset,                                   //offsetHeader: bigint, 
+            recordContentOffset,                                //offsetContent: bigint, 
+            responseContentLength,                              //contentLength: bigint, 
+            (lastModified) ? new Date(lastModified) : null,     //lastModified: string, 
+            (date) ? new Date(date) : null,                     //date: string, 
+            status,                                             //status: number
+            transferEncoding,
+            )
         });
 
         await sleep(1);
