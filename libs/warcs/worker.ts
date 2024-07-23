@@ -70,42 +70,44 @@ const parseWarcFile = async (file: string) => {
 
         //console.log(responseType);
 
-        await dbInsertResponse(
-            targetUri.replace(/<|>/g, ''),                                          //uri: string, 
-            location,                                           //location: string, 
-            responseType,                                           //type: string, 
-            `warcs/${file}`,                                               //filename: string, 
-            recordWarcOffset,                                   //offsetHeader: bigint, 
-            recordContentOffset,                                //offsetContent: bigint, 
-            responseContentLength,                              //contentLength: bigint, 
-            (lastModified) ? new Date(lastModified) : null,     //lastModified: string, 
-            (date) ? new Date(date) : null,                     //date: string, 
-            status,                                                //status: number
-            transferEncoding,
-        ).then(() => {
-            const percent = Math.round((Number(recordWarcOffset) / fileSize) * 100);
+        try {
+            await dbInsertResponse(
+                targetUri.replace(/<|>/g, ''),                                          //uri: string, 
+                location,                                           //location: string, 
+                responseType,                                           //type: string, 
+                `warcs/${file}`,                                               //filename: string, 
+                recordWarcOffset,                                   //offsetHeader: bigint, 
+                recordContentOffset,                                //offsetContent: bigint, 
+                responseContentLength,                              //contentLength: bigint, 
+                (lastModified) ? new Date(lastModified) : null,     //lastModified: string, 
+                (date) ? new Date(date) : null,                     //date: string, 
+                status,                                                //status: number
+                transferEncoding,
+            ).then(() => {
+                const percent = Math.round((Number(recordWarcOffset) / fileSize) * 100);
 
-            if (percent > lastPercent) {
-                //mpd.updateTask(file, {percentage: percent/100})
-                lastPercent = percent;
-                //console.log(`${file} ${percent}`)
-                postMessage({ file: file, status: "progress", progress: percent });
-            }
-            //console.log(file, Number(responseContentLength), fileSize)
-        }).catch(()=>{
-            console.log(`WARC Worker ${file}: error on ${targetUri.replace(/<|>/g, '')}`,                       
-            location,                                           //location: string, 
-            responseType,                                       //type: string, 
-            `warcs/${file}`,                                    //filename: string, 
-            recordWarcOffset,                                   //offsetHeader: bigint, 
-            recordContentOffset,                                //offsetContent: bigint, 
-            responseContentLength,                              //contentLength: bigint, 
-            (lastModified) ? new Date(lastModified) : null,     //lastModified: string, 
-            (date) ? new Date(date) : null,                     //date: string, 
-            status,                                             //status: number
-            transferEncoding,
-            )
-        });
+                if (percent > lastPercent) {
+                    //mpd.updateTask(file, {percentage: percent/100})
+                    lastPercent = percent;
+                    //console.log(`${file} ${percent}`)
+                    postMessage({ file: file, status: "progress", progress: percent });
+                }
+                //console.log(file, Number(responseContentLength), fileSize)
+            }).catch(() => {
+                console.log(`WARC Worker ${file}: error on ${targetUri.replace(/<|>/g, '')}`,
+                    location,                                           //location: string, 
+                    responseType,                                       //type: string, 
+                    `warcs/${file}`,                                    //filename: string, 
+                    recordWarcOffset,                                   //offsetHeader: bigint, 
+                    recordContentOffset,                                //offsetContent: bigint, 
+                    responseContentLength,                              //contentLength: bigint, 
+                    (lastModified) ? new Date(lastModified) : null,     //lastModified: string, 
+                    (date) ? new Date(date) : null,                     //date: string, 
+                    status,                                             //status: number
+                    transferEncoding,
+                )
+            });
+        } catch (e) {}
 
         await sleep(1);
     }
@@ -116,7 +118,7 @@ const parseWarcFile = async (file: string) => {
 
 self.onmessage = (event: MessageEvent) => {
     const data = event.data;
-    
+
     if (!data || typeof data !== 'object' || !('file' in data)) {
         console.log(`WARC Worker, invalid format ${data}`)
         return;
