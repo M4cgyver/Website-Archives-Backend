@@ -101,7 +101,7 @@ export const parseWarcFiles = async () => {
 
     const mpd = (progressType == "bar") ? new MultiProgressBars({
         initMessage: "$ Parsing files...",
-        anchor: 'bottom',
+        anchor: 'top',
         persist: true,
         border: true,
     }) : null;
