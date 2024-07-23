@@ -4,7 +4,7 @@ import os from "os";
 import path from "path";
 
 export const statistics = async (req: Request, res: Response) => {
-    const warcsDirectory = path.join(__dirname, "..", "..", "warcs"); // Replace with your actual warcs directory path
+    const warcsDirectory = "warcs/"; // Replace with your actual warcs directory path
 
     try {
         // Function to calculate total size of a directory recursively
