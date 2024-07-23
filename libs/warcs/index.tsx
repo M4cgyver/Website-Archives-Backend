@@ -5,6 +5,8 @@ import { open } from 'fs/promises';
 import { mWarcParse, mWarcParseResponses, type mWarcReadFunction } from '../mwarcparser';
 import { dbInsertResponse } from '../database';
 
+const progressType: string = process.env.WARC_PROCESSING_STATUS ?? "bar";
+
 export const parseWarcFiles = async () => {
     /*
     console.log("Parsing warc files...");
@@ -97,12 +99,12 @@ export const parseWarcFiles = async () => {
     const workers: Worker[] = [];
     const files = (await fs.readdir("warcs/")).filter(file => file.endsWith('.warc')).sort();
 
-    const mpd = new MultiProgressBars({
+    const mpd = (progressType == "bar") ? new MultiProgressBars({
         initMessage: "$ Parsing files...",
         anchor: 'top',
         persist: true,
         border: true,
-    })
+    }) : null;
 
     /*
     files.forEach(file => {
@@ -123,24 +125,31 @@ export const parseWarcFiles = async () => {
         workers.push(worker);
     }) */
 
-    const startWorker = async (file:string) => {
-        mpd.addTask(file, { type: 'percentage' });
+    const startWorker = async (file: string) => {
+        if (mpd)
+            mpd.addTask(file, { type: 'percentage' });
 
         const worker = new Worker("libs/warcs/worker.ts");
 
         worker.onmessage = event => {
             const { file, status, progress } = event.data;
-            
-            if(status == "progress")
-                mpd.updateTask(file, {percentage: progress/100})
+
+            if (status == "progress")
+                if (mpd)
+                    mpd.updateTask(file, { percentage: progress / 100 })
+                else 
+                    console.log(`${file} processed ${progress}`)
             else if (status == "complete") {
-                mpd.updateTask(file, {percentage: 1})
-                
+                if (mpd)
+                    mpd.updateTask(file, { percentage: 1 })
+                else 
+                    console.log(`${file} complete!`);
+
                 const nextFile = files.pop();
 
-                if(nextFile)
+                if (nextFile)
                     startWorker(nextFile);
-            }     
+            }
         }
 
         worker.postMessage({ file: file });
@@ -149,6 +158,6 @@ export const parseWarcFiles = async () => {
         return worker;
     }
 
-    for(let file = files.pop(); file && workers.length < (parseInt(process.env.MAX_PARRALLEL_WARC_PROCESSING ?? '4') ?? 4); file = files.pop() ) 
+    for (let file = files.pop(); file && workers.length < (parseInt(process.env.MAX_PARRALLEL_WARC_PROCESSING ?? '4') ?? 4); file = files.pop())
         await startWorker(file);
 }
