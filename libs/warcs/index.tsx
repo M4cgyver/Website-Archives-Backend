@@ -99,12 +99,12 @@ export const parseWarcFiles = async () => {
     const workers: Worker[] = [];
     const files = (await fs.readdir("warcs/")).filter(file => file.endsWith('.warc')).sort();
 
-    const mpd = (progressType == "bar") ? new MultiProgressBars({
+    const mpd = new MultiProgressBars({
         initMessage: "$ Parsing files...",
         anchor: 'top',
         persist: true,
         border: true,
-    }) : null;
+    });
 
     /*
     files.forEach(file => {
