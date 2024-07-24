@@ -3,6 +3,7 @@ import { view } from "./view";
 import { search } from "./search";
 import { statistics } from "./statistics/index";
 import { latest } from "./statistics/latest";
+import { progress } from "./statistics/progress";
 
 let app: express.Application | undefined = undefined;
 
@@ -17,6 +18,7 @@ export const setupExpress = () => {
 
     app.get("/api/statistics", statistics);
     app.get("/api/statistics/latest", latest);
+    app.get("/api/statistics/progress", progress);
 
 };
 
