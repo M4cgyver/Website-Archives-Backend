@@ -1,132 +1,248 @@
+import { sleep } from "bun";
 import fs from "fs";
 import { Client } from 'pg';
 
+// Type definitions for responses
+export interface dbResponseMeta {
+    [key: string]: any;
+}
+
+export interface dbSearchResponseResult {
+    response_id_r: number;
+    uri_r: string;
+    file_r: string;
+    content_type_r: string;
+    resource_type_r: string;
+    ip_r: string;
+    record_length_r: bigint;
+    record_offset_r: bigint;
+    content_offset_r: bigint;
+    content_length_r: bigint;
+    status_r: number;
+    meta_r: dbResponseMeta;
+    date_added_r: Date;
+}
+
+export interface dbInsertResponseParams {
+    uri_string: string;
+    file_string: string;
+    content_type_string: string;
+    resource_type_string: string;
+    record_length: bigint;
+    record_offset: bigint;
+    content_offset: bigint;
+    content_length: bigint;
+    status: number;
+    meta: dbResponseMeta;
+}
+
+export interface dbSearchResponsesParams {
+    search_uri_a: string;
+    limit_num_a?: number;
+    offset_num_a?: number;
+    search_ip_a?: string;
+    search_content_type_a?: string;
+}
+
+export interface dbRetrieveResponseResult {
+    response_id_r: number;
+    uri_r: string;
+    file_r: string;
+    content_type_r: string;
+    resource_type_r: string;
+    ip_r: string;
+    record_length_r: bigint;
+    record_offset_r: bigint;
+    content_offset_r: bigint;
+    content_length_r: bigint;
+    status_r: number;
+    meta_r: dbResponseMeta;
+}
+
+export interface dbRetrieveResponseFullResult {
+    response_id_r: number;
+    uri_r: string;
+    file_r: string;
+    content_type_r: string;
+    resource_type_r: string;
+    ip_r: string;
+    record_length_r: bigint;
+    record_offset_r: bigint;
+    content_offset_r: bigint;
+    content_length_r: bigint;
+    status_r: number;
+    meta_r: dbResponseMeta;
+    date_added_r: string; // Date as ISO string
+}
+
 // Declare a global variable for the database client
+const dbConfig = {
+    user: 'bun_user', // Username for PostgreSQL connection
+    host: 'm4cgyver-archives-backend-postgres', // Hostname or service name defined in Docker Compose
+    database: 'webpages', // Database name
+    password: 'bun_password', // Password for PostgreSQL connection
+    port: 5432, // Port number for PostgreSQL connection
+};
 let globalDbClient: Client | null = null;
 
-export const connectDb = async (retries: number = 5): Promise<Client> => {
+export const connectDb = async (): Promise<Client> => {
     if (!globalDbClient) {
-        console.log("connecting to db...");
-        // Initialize the client if it hasn't been initialized yet
-        globalDbClient = new Client({
-            user: 'bun_user', // Username for PostgreSQL connection
-            host: 'm4cgyver-archives-backend-postgres', // Hostname or service name defined in Docker Compose
-            database: 'webpages', // Database name
-            password: 'bun_password', // Password for PostgreSQL connection
-            port: 5432, // Port number for PostgreSQL connection
-        });
+        console.log("Connecting to the database...");
+        globalDbClient = new Client(dbConfig);
 
-        // Event handler for connection errors
-        globalDbClient.on('error', (err: any) => {
-            console.error('Error connecting to PostgreSQL:', err);
-        });
-
-        for (let attempt = 0; attempt < retries; attempt++) {
-            try {
-                await globalDbClient.connect();
-                console.log("Connected to the database");
-                break; // Exit the loop on successful connection
-            } catch (err) {
-                console.error(`Failed to connect to the database (attempt ${attempt + 1}/${retries}):`, err);
-                globalDbClient = null; // Reset client in case of error
-                if (attempt < retries - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before retrying
-                } else {
-                    throw err; // Throw error after exhausting retries
-                }
-            }
+        try {
+            await globalDbClient.connect();
+        } catch (error) {
+            console.error("Error connecting to the database:", error);
+            await sleep(1000);
+            globalDbClient = null;
+            return connectDb();
         }
     }
 
     return globalDbClient;
 };
 
-
 export const setupDb = async () => {
     const client = await connectDb();
 
     try {
+        console.time("Resetting db");
         const sqlSetup = fs.readFileSync('libs/database/setup.pg.sql', 'utf8');
-        return client.query(sqlSetup);
+        console.timeEnd("Resetting db");
+        console.log("Successfully reset db");
+        await client.query(sqlSetup);
     } catch (err) {
+        console.error("Error setting up the database:", err);
         throw err;
     }
 };
 
-export const dbInsertResponse = async (
-    uri: string, 
-    location: string | null, 
-    type: string, 
-    filename: string, 
-    offsetHeader: bigint, 
-    offsetContent: bigint, 
-    contentLength: bigint, 
-    lastModified: Date | null, 
-    date: Date | null, 
-    status: number,
-    transferEncoding: string | null,
-) => {
+// Insert response into the database
+export async function dbInsertResponse(params: dbInsertResponseParams): Promise<void> {
     const client = await connectDb();
 
+    const {
+        uri_string,
+        file_string,
+        content_type_string,
+        resource_type_string,
+        record_length,
+        record_offset,
+        content_offset,
+        content_length,
+        status,
+        meta,
+    } = params;
+
     const query = `
-        SELECT insert_response($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
+        SELECT insert_response(
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+        );
     `;
 
-    const values = [uri, location, type, filename, offsetHeader, offsetContent, contentLength, lastModified, date, status, (transferEncoding) ? transferEncoding : "identity"];
-
     try {
-        const ret = await client.query(query, values);
-        //console.log('Response inserted successfully', uri);
-        return ret;
-    } catch (err) {
-        console.error('Failed to insert response', err);
-        throw err;
+        await client.query(query, [
+            uri_string,
+            file_string,
+            content_type_string,
+            resource_type_string,
+            record_length,
+            record_offset,
+            content_offset,
+            content_length,
+            status,
+            JSON.stringify(meta),
+        ]);
+    } catch (error) {
+        console.error("Error inserting response:", error);
+        throw error;
     }
-};
+}
 
-// Function to retrieve responses
-export const dbRetrieveResponses = async (
-    uri: string | null = null,
-    date: Date | undefined = undefined,
-    limit: bigint | undefined = undefined,
-    page: bigint | undefined = undefined,
-    status: number | undefined = undefined,
-    type: string | null = null
-): Promise<any> => {
+// Search for responses in the database
+export async function dbSearchResponses(params: dbSearchResponsesParams): Promise<dbSearchResponseResult[]> {
+    const {
+        search_uri_a,
+        limit_num_a = 32,
+        offset_num_a = 0,
+        search_ip_a = null,
+        search_content_type_a = null,
+    } = params;
+
     const client = await connectDb();
 
     const query = `
-        SELECT * FROM retrieve_responses($1, $2, $3, $4, $5, $6);
+        SELECT * FROM search_responses(
+            $1, $2, $3, $4, $5
+        );
     `;
 
-    const values = [uri, date, limit, page, status, type];
-
     try {
-        const { rows } = await client.query(query, values);
-        return rows;
-    } catch (err) {
-        console.error('Failed to retrieve responses', err);
-        throw err;
-    } 
-};
+        const result = await client.query(query, [
+            search_uri_a,
+            limit_num_a,
+            offset_num_a,
+            search_ip_a,
+            search_content_type_a,
+        ]);
 
-// Function to retrieve latest responses
-export const dbRetrieveLatestResponses = async (
-    limit: bigint | number = 20n
-): Promise<any> => {
+        return result.rows;
+    } catch (error) {
+        console.error("Error searching responses:", error);
+        throw error;
+    }
+}
+
+// Retrieve response by URI
+export async function dbRetrieveResponse(uri_string: string): Promise<dbRetrieveResponseResult[]> {
     const client = await connectDb();
 
     const query = `
-        SELECT * FROM retrieve_latest_responses($1);
+        SELECT * FROM retrieve_response(
+            $1
+        );
     `;
 
-    const values = [BigInt(limit)];
+    try {
+        const result = await client.query(query, [uri_string]);
+        return result.rows;
+    } catch (error) {
+        console.error("Error retrieving response:", error);
+        throw error;
+    }
+}
+
+// Retrieve full response details by URI
+export async function dbRetrieveResponseFull(uri_string: string): Promise<dbRetrieveResponseFullResult[]> {
+    const client = await connectDb();
+
+    const query = `
+        SELECT * FROM retrieve_response_full(
+            $1
+        );
+    `;
 
     try {
-        const { rows } = await client.query(query, values);
-        return rows;
-    } catch (err) {
-        console.error('Failed to retrieve latest responses', err);
-        throw err;
+        const result = await client.query(query, [uri_string]);
+        return result.rows;
+    } catch (error) {
+        console.error("Error retrieving full response:", error);
+        throw error;
+    }
+}
+
+// Retrieve the latest responses
+export const dbRetrieveLatestResponses = async (total: number): Promise<dbSearchResponseResult[]> => {
+    const client = await connectDb();
+
+    const query = `SELECT * FROM latest_responses($1)`;
+
+    try {
+        const result = await client.query(query, [total]);
+        return result.rows;
+    } catch (error) {
+        console.error("Error retrieving latest responses:", error);
+        throw error;
     }
 };

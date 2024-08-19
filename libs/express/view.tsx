@@ -1,100 +1,94 @@
 import express, { Request, Response } from "express";
-import { dbRetrieveResponses } from "../database";
 import { open } from 'fs/promises';
 import { Transform } from 'stream';
-import { hexToBn } from "../bignumber";
 import { mWarcParseResponseContent } from "../mwarcparser";
 import { httpRedirect } from "../http";
+import { dbRetrieveResponse } from "../database";
 
 export const view = async (req: Request, res: Response) => {
-    const uri: string | undefined = req.query.uri as string | undefined;
-    const dateArchived: string | undefined = req.query.dateArchived as string | undefined;
-    const lastModified: string | undefined = req.query.lastModified as string | undefined;
-    const redirect: boolean | undefined = req.query.redirect === 'true';
+    const uri = req.query.uri as string | undefined;
+    const redirect = req.query.redirect === 'true';
 
-    /*
-    // Check if the URI parameter is provided
     if (!uri) {
         return res.status(400).json({ error: "Missing query parameter: uri" });
     }
-    */
 
     try {
-        const data: any = await dbRetrieveResponses(uri, undefined, 1n, 1n);
+        const [record] = await dbRetrieveResponse(uri);
 
-        if (data.length === 0) {
-            return res.status(404).json({ error: "No data found for the given URI" });
+        if (!record) {
+            return res.status(404).json({ error: `No record found with the given uri ${uri}` });
         }
 
-        const status: number = parseInt(data[0].status);
-        const location: string | null = data[0].location;
-        const filename: string = data[0].filename;
-        const targetUri: string = data[0].uri;
-        const contentLength: string = data[0].content_length;
-        const offsetContent: string = data[0].offset_content;
-        const transferEncoding: string = data[0].transfer_encoding;
-        const contentType: string = data[0].type;
+        const {
+            file_r: filepath,
+            content_type_r: contentType,
+            content_offset_r: contentOffset,
+            content_length_r: contentLength,
+            status_r: status,
+            meta_r: meta,
+        } = record;
 
-        if ((status == 301 || status == 302 || status == 303 || status == 307 || status == 308) && location !== null && location !== undefined && location !== "") {
+        const { location, 'transfer-encoding': transferEncoding } = meta || {};
+
+        // Handle redirection
+        //console.log(status, location, meta);
+        if ([301, 302, 303, 307, 308].includes(status) && location) {
             req.query.uri = location;
-            view(req, res); // Ensure view function is correctly defined and imported
-            return;
-        }        
+            return view(req, res);
+        }
 
-        const fd = await open(filename, 'r');
+        // Open the file and create a stream
+        const fd = await open(filepath, 'r');
         const streamOptions = {
-            start: Number(offsetContent),
-            end: Number(offsetContent) + Number(contentLength) - 1,
+            start: Number(contentOffset),
+            end: Number(contentOffset) + Number(contentLength) - 1,
         };
         const readStream = fd.createReadStream(streamOptions);
 
-        res.set('Content-Type', contentType);
-
-        if (contentLength)
-            res.set('Content-Length', contentLength);
+        res.setHeader('Content-Type', contentType);
+        if (contentLength) {
+            res.setHeader('Content-Length', contentLength);
+        }
 
         res.status(status);
 
+        const finalStream = await mWarcParseResponseContent(readStream, transferEncoding);
+
         if (redirect && contentType.includes("text/")) {
-            const finalStream = await mWarcParseResponseContent(readStream, transferEncoding)
-
-            const promise = new Promise((res, rej) => {
-                let str = "";
-
-                finalStream.on('data', chunk => {
-                    str += chunk;
-                });
-
-                finalStream.on('end', () => {
-                    res(str);
-                });
-
-                finalStream.on('error', err => {
-                    rej(err);
-                });
+            let str = "";
+            finalStream.on('data', chunk => {
+                str += chunk;
             });
 
-            promise.then((str: any) => {
-                return httpRedirect(str, targetUri, process.env.REDIRECT_BASE_URL  ?? "https://redirect-url-not-defined", contentType);
-            }).then(parsed => {
-                res.send(parsed);
+            finalStream.on('end', async () => {
+                try {
+                    const redirectUrl = process.env.REDIRECT_BASE_URL ?? "https://redirect-url-not-defined";
+                    const parsed = await httpRedirect(str, uri, redirectUrl, contentType);
+                    res.send(parsed);
+                } catch (err) {
+                    console.error('Redirect error:', err);
+                    res.status(500).send('Internal Server Error');
+                } finally {
+                    await fd.close();
+                }
             });
 
         } else {
-            const finalStream = await mWarcParseResponseContent(readStream, transferEncoding).pipe(res);
+            finalStream.pipe(res);
 
-            finalStream.on('end', () => {
-                fd.close();
-            });
-
-            finalStream.on('error', (err: any) => {
-                console.error('Stream error:', err);
-                res.status(500).send('Internal Server Error');
+            finalStream.on('end', async () => {
+                await fd.close();
             });
         }
 
-    } catch (error: any) {
-        console.error('Failed to retrieve responses', error);
-        res.status(500).json({ error: "Failed to retrieve responses", message: error.message });
+        finalStream.on('error', err => {
+            console.error('Stream error:', err);
+            res.status(500).send('Internal Server Error');
+        });
+
+    } catch (error) {
+        console.error("Error handling request:", error);
+        res.status(500).json({ error: "Internal server error" });
     }
 };
