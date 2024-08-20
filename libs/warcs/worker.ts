@@ -82,7 +82,7 @@ const parseWarcFile = async (file: string) => {
         const recordData = {
             uri_string: targetUri.replace(/<|>/g, ''),
             file_string: `warcs/${file}`,
-            content_type_string: responseType,
+            content_type_string: responseType ?? "application/unknown",
             resource_type_string: 'response',
             record_length: BigInt(recordResponseOffset),
             record_offset: BigInt(recordWarcOffset),
