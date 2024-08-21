@@ -9,8 +9,8 @@ await new Promise(resolve=>setTimeout(resolve, 5000))
 console.log("starting api");
 
 await connectDb();
-await setupDb();
+//await setupDb();
 
-parseWarcFiles();
+//parseWarcFiles();
 
 await listenExpress();
