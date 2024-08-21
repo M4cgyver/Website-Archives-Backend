@@ -70,7 +70,7 @@ CREATE TABLE responses (
 );
 
 -- Creating indexes on relevant columns
-CREATE INDEX idx_uris_uri ON uris USING gin (uri gin_trgm_ops); -- Trigram index for partial text search
+CREATE INDEX idx_uris_uri ON uris (uri);
 CREATE INDEX idx_files_file ON files (file);
 CREATE INDEX idx_ips_ip ON ips (ip);
 CREATE INDEX idx_contentType_type ON contentType (type);
