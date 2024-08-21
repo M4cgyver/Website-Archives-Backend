@@ -9,10 +9,10 @@ export const view = async (req: Request, res: Response) => {
     const uri = req.query.uri as string | undefined;
     const redirect = req.query.redirect === 'true';
     const timestr = `Viewing ${uri} ${process.hrtime()}...`;
-    console.time(timestr);
+    //console.time(timestr);
 
     if (!uri) {
-        console.timeEnd(timestr);
+        //console.timeEnd(timestr);
         return res.status(400).json({ error: "Missing query parameter: uri" });
     }
 
@@ -20,7 +20,7 @@ export const view = async (req: Request, res: Response) => {
         const [record] = await dbRetrieveResponse(uri);
 
         if (!record) {
-            console.timeEnd(timestr);
+            //console.timeEnd(timestr);
             return res.status(404).json({ error: `No record found with the given uri ${uri}` });
         }
 
@@ -39,7 +39,7 @@ export const view = async (req: Request, res: Response) => {
         //console.log(status, location, meta);
         if ([301, 302, 303, 307, 308].includes(status) && location) {
             req.query.uri = location;
-            console.timeEnd(timestr);
+            //console.timeEnd(timestr);
             return view(req, res);
         }
 
@@ -75,7 +75,7 @@ export const view = async (req: Request, res: Response) => {
                     console.error('Redirect error:', err);
                     res.status(500).send('Internal Server Error');
                 } finally {
-                    console.timeEnd(timestr);
+                    //console.timeEnd(timestr);
                     await fd.close();
                 }
             });
@@ -85,19 +85,19 @@ export const view = async (req: Request, res: Response) => {
 
             finalStream.on('end', async () => {
                 await fd.close();
-                console.timeEnd(timestr);
+                //console.timeEnd(timestr);
             });
         }
 
         finalStream.on('error', err => {
             console.error('Stream error:', err);
             res.status(500).send('Internal Server Error');
-            console.timeEnd(timestr);
+            //console.timeEnd(timestr);
         });
 
     } catch (error) {
         console.error("Error handling request:", error);
         res.status(500).json({ error: "Internal server error" });
-        console.timeEnd(timestr);
+        //console.timeEnd(timestr);
     }
 };
