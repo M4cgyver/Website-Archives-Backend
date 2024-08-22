@@ -106,10 +106,11 @@ const parseWarcFile = async (file: string) => {
         }
     }
 
-    Promise.allSettled(promises).then(async () => {
+    Promise.allSettled(promises).then(() => {
         console.log(`   Parsed ${file}!`);
-        await closeDb();
-        postMessage({ file: file, status: "complete" });
+        closeDb().then(() => {
+            postMessage({ file: file, status: "complete" });
+        });
     })
 };
 
