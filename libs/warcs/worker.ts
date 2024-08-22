@@ -44,6 +44,7 @@ const readFile = async (filename: string): Promise<mWarcReadFunction> => {
 
 const parseWarcFile = async (file: string) => {
     const warc = mWarcParseResponses(await readFile(`warcs/${file}`), { skipContent: true });
+    const promises = [];
 
     console.log(`   Parsing ${file}...`);
 
@@ -91,21 +92,24 @@ const parseWarcFile = async (file: string) => {
         };
 
         try {
-            await dbInsertResponse(recordData);
+            promises.push(dbInsertResponse(recordData).then(() => {
 
-            const percent = Math.round((Number(recordWarcOffset) / fileSize) * 100);
+                const percent = Math.round((Number(recordWarcOffset) / fileSize) * 100);
 
-            if (percent > lastPercent) {
-                lastPercent = percent;
-                postMessage({ file: file, status: "progress", progress: percent });
-            }
+                if (percent > lastPercent) {
+                    lastPercent = percent;
+                    postMessage({ file: file, status: "progress", progress: percent });
+                }
+            }));
         } catch (e: any) {
             console.log(`Failed to insert record ${e.message}`, recordData);
         }
     }
 
-    console.log(`   Parsed ${file}!`);
-    postMessage({ file: file, status: "complete" });
+    Promise.allSettled(promises).then(() => {
+        console.log(`   Parsed ${file}!`);
+        postMessage({ file: file, status: "complete" });
+    })
 };
 
 self.onmessage = (event: MessageEvent) => {
