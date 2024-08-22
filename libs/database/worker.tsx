@@ -1,7 +1,7 @@
 import { sleep } from "bun";
 import fs from "fs";
 import { Client, Pool, type PoolClient } from 'pg';
-import { dbConfig, dbInsertResponseParams, dbSearchResponsesParams, dbSearchResponseResult, dbRetrieveResponseResult, dbRetrieveResponseFullResult } from "./types";
+import { dbConfig, type dbInsertResponseParams, type dbSearchResponsesParams, type dbSearchResponseResult, type dbRetrieveResponseResult, type dbRetrieveResponseFullResult } from "./types";
 
 declare var self: Worker;
 
