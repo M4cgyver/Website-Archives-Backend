@@ -1,37 +1,10 @@
-import { dbInsertResponseParams, dbSearchResponsesParams, dbSearchResponseResult, dbRetrieveResponseResult, dbRetrieveResponseFullResult } from "./types";
+import { getWorker, type dbInsertResponseParams, type dbRetrieveResponseFullResult, type dbRetrieveResponseResult, type dbSearchResponseResult, type dbSearchResponsesParams } from "./types";
 
-const worker = new Worker(new URL("./worker.tsx", import.meta.url), { type: 'module' });
-
-type ActionResponse = {
-    id: number;
-    status: 'success' | 'error';
-    data?: any;
-    message?: string;
-};
-
-// Map to keep track of promises by their IDs
-const promises = new Map<number, { resolve: (value: any) => void, reject: (reason?: any) => void }>();
-
-worker.onmessage = (event: MessageEvent<ActionResponse>) => {
-    const { id, status, data, message } = event.data;
-    const handlers = promises.get(id);
-
-    if (handlers) {
-        if (status === 'error') {
-            handlers.reject(message);
-        } else {
-            handlers.resolve(data);
-        }
-
-        // Clean up the handlers once they are used
-        promises.delete(id);
-    }
-};
+const { worker, promises } = getWorker();
 
 const callAction = (action: string, params?: any): Promise<any> => {
     return new Promise((resolve, reject) => {
-        //const id = Date.now(); // Unique ID for each request
-        const id = process.hrtime()[1];
+        const id = process.hrtime()[1]; // Unique ID for each request
         promises.set(id, { resolve, reject });
 
         worker.postMessage({ id, action, params });

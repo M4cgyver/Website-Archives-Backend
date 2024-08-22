@@ -5,10 +5,11 @@ import { dbConfig, dbInsertResponseParams, dbSearchResponsesParams, dbSearchResp
 
 declare var self: Worker;
 
+const timet =  process.hrtime()[1];
 let globalDbPool: Pool | null = null;
 
 /*
-export const connectDb = async (): Promise<Client> => {
+const connectWorkerDb = async (): Promise<Client> => {
     if (!globalDbClient) {
         console.log("Connecting to the database...");
         globalDbClient = new Client(dbConfig);
@@ -19,7 +20,7 @@ export const connectDb = async (): Promise<Client> => {
             console.error("Error connecting to the database:", error);
             await sleep(1000);
             globalDbClient = null;
-            return connectDb();
+            return connectWorkerDb();
         }
     }
 
@@ -28,33 +29,18 @@ export const connectDb = async (): Promise<Client> => {
 */
 
 // Create or reuse a connection pool
-export const connectPool = async (pool?: Pool): Promise<Pool> => {
-    if (!globalDbPool && pool) {
-        globalDbPool = pool;
-        return pool;
-    }
-    if (!globalDbPool) {
-        console.log("Creating a new database connection pool...");
+const connectWorkerPool = async (pool?: Pool): Promise<Pool> => {
+    if (globalDbPool === null) {
+        console.log(`Creating a new database connection pool ${timet}...`);
         globalDbPool = new Pool(dbConfig);
-
-        try {
-            // Test the pool by connecting a client
-            const client = await globalDbPool.connect();
-            client.release(); // Release the client back to the pool
-        } catch (error) {
-            console.error("Error creating the database connection pool:", error);
-            await sleep(1000);
-            globalDbPool = null;
-            return connectPool();
-        }
     }
 
     return globalDbPool;
 };
 
-export const connectDb = async () => {
+const connectWorkerDb = async () => {
     try {
-        const pool = await connectPool();
+        const pool = await connectWorkerPool();
         const client = await pool.connect();
         client.release();
         return { status: "connected" };
@@ -65,8 +51,8 @@ export const connectDb = async () => {
     }
 };
 
-export const setupDb = async () => {
-    const client = await connectPool();
+const setupWorkerDb = async () => {
+    const client = await connectWorkerPool();
 
     try {
         console.time("Resetting db");
@@ -81,8 +67,8 @@ export const setupDb = async () => {
 };
 
 // Insert response into the database
-export async function dbInsertResponse(params: dbInsertResponseParams): Promise<void> {
-    const client = await connectPool();
+async function dbWorkerInsertResponse(params: dbInsertResponseParams): Promise<void> {
+    const client = await connectWorkerPool();
 
     const {
         uri_string,
@@ -123,7 +109,7 @@ export async function dbInsertResponse(params: dbInsertResponseParams): Promise<
 }
 
 // Search for responses in the database
-export async function dbSearchResponses(params: dbSearchResponsesParams): Promise<dbSearchResponseResult[]> {
+async function dbWorkerSearchResponses(params: dbSearchResponsesParams): Promise<dbSearchResponseResult[]> {
     const {
         search_uri_a,
         limit_num_a = 32,
@@ -132,7 +118,7 @@ export async function dbSearchResponses(params: dbSearchResponsesParams): Promis
         search_content_type_a = null,
     } = params;
 
-    const client = await connectPool();
+    const client = await connectWorkerPool();
 
     const query = `
         SELECT * FROM search_responses(
@@ -157,8 +143,8 @@ export async function dbSearchResponses(params: dbSearchResponsesParams): Promis
 }
 
 // Retrieve response by URI
-export async function dbRetrieveResponse(uri_string: string): Promise<dbRetrieveResponseResult[]> {
-    const client = await connectPool();
+async function dbWorkerRetrieveResponse(uri_string: string): Promise<dbRetrieveResponseResult[]> {
+    const client = await connectWorkerPool();
 
     const query = `
         SELECT * FROM retrieve_response(
@@ -176,8 +162,8 @@ export async function dbRetrieveResponse(uri_string: string): Promise<dbRetrieve
 }
 
 // Retrieve full response details by URI
-export async function dbRetrieveResponseFull(uri_string: string): Promise<dbRetrieveResponseFullResult[]> {
-    const client = await connectPool();
+async function dbWorkerRetrieveResponseFull(uri_string: string): Promise<dbRetrieveResponseFullResult[]> {
+    const client = await connectWorkerPool();
 
     const query = `
         SELECT * FROM retrieve_response_full(
@@ -195,8 +181,8 @@ export async function dbRetrieveResponseFull(uri_string: string): Promise<dbRetr
 }
 
 // Retrieve the latest responses
-export const dbRetrieveLatestResponses = async (total: number): Promise<dbSearchResponseResult[]> => {
-    const client = await connectPool();
+const dbWorkerRetrieveLatestResponses = async (total: number): Promise<dbSearchResponseResult[]> => {
+    const client = await connectWorkerPool();
 
     const query = `SELECT * FROM latest_responses($1)`;
 
@@ -217,26 +203,26 @@ self.onmessage = async (event: MessageEvent) => {
     try {
         switch (action) {
             case 'connectDb':
-                response = { status: 'sucess', data: await connectDb() };
+                response = { status: 'sucess', data: await connectWorkerDb() };
                 break;
 
             case 'setupDb':
-                response = { status: 'sucess', data: await setupDb() };
+                response = { status: 'sucess', data: await setupWorkerDb() };
                 break;
             case 'dbInsertResponse':
-                response = { status: 'sucess', data: await dbInsertResponse(params) };
+                response = { status: 'sucess', data: await dbWorkerInsertResponse(params) };
                 break;
             case 'dbSearchResponses':
-                response = { status: 'sucess', data: await dbSearchResponses(params) };
+                response = { status: 'sucess', data: await dbWorkerSearchResponses(params) };
                 break;
             case 'dbRetrieveResponse':
-                response = { status: 'sucess', data: await dbRetrieveResponse(params) };
+                response = { status: 'sucess', data: await dbWorkerRetrieveResponse(params) };
                 break;
             case 'dbRetrieveResponseFull':
-                response = { status: 'sucess', data: await dbRetrieveResponseFull(params) };
+                response = { status: 'sucess', data: await dbWorkerRetrieveResponseFull(params) };
                 break;
             case 'dbRetrieveLatestResponses':
-                response = { status: 'sucess', data: await dbRetrieveLatestResponses(params) };
+                response = { status: 'sucess', data: await dbWorkerRetrieveLatestResponses(params) };
                 break;
 
             // Add other cases for different actions as needed

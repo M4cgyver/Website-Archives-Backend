@@ -4,6 +4,8 @@ import { connectDb, setupDb } from "./libs/database";
 import { listenExpress, setupExpress } from "./libs/express";
 import { parseWarcFiles } from "./libs/warcs";
 
+console.log("Hello world!");
+
 await new Promise(resolve=>setTimeout(resolve, 5000))
 
 console.log("starting api");

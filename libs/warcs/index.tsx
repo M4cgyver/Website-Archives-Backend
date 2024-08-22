@@ -1,10 +1,5 @@
 import { MultiProgressBars } from 'multi-progress-bars';
 import fs from 'fs/promises';
-import { splitArrayIntoFour } from '../array';
-import { open } from 'fs/promises';
-import { mWarcParse, mWarcParseResponses, type mWarcReadFunction } from '../mwarcparser';
-import { dbInsertResponse } from '../database';
-
 const progressType: string = process.env.WARC_PROCESSING_STATUS ?? "bar";
 
 export const parseWarcFilesProgress: Record<string, number> = {};
@@ -145,7 +140,7 @@ export const parseWarcFiles = async () => {
         const worker = new Worker("libs/warcs/worker.ts");
 
         worker.onmessage = event => {
-            const { file, status, progress } = event.data;
+            const { file, status, progress, data } = event.data;
 
             if (status == "progress") {
                 parseWarcFilesProgress[file] = progress;

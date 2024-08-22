@@ -1,3 +1,6 @@
+-- Create the extensions if they dont exist
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 -- Drop existing functions, views, indexes, and tables if they exist
 DROP FUNCTION IF EXISTS insert_response CASCADE;
 DROP FUNCTION IF EXISTS search_responses CASCADE;
@@ -7,15 +10,34 @@ DROP FUNCTION IF EXISTS retrieve_response_full CASCADE;
 
 DROP VIEW IF EXISTS responses_full CASCADE;
 
+-- Drop indexes on the uris table
 DROP INDEX IF EXISTS idx_uris_uri;
+DROP INDEX IF EXISTS idx_uris_uri_hash;
+DROP INDEX IF EXISTS idx_uris_uri_hash_usri;
+DROP INDEX IF EXISTS idx_uris_uri_tgrm;
+
+-- Drop indexes on the files table
 DROP INDEX IF EXISTS idx_files_file;
+
+-- Drop indexes on the ips table
 DROP INDEX IF EXISTS idx_ips_ip;
+
+-- Drop indexes on the contentType table
 DROP INDEX IF EXISTS idx_contentType_type;
+
+-- Drop indexes on the resourceType table
 DROP INDEX IF EXISTS idx_resourceType_type;
+
+-- Drop indexes on the responses table
 DROP INDEX IF EXISTS idx_responses_file_id;
 DROP INDEX IF EXISTS idx_responses_content_type_id;
 DROP INDEX IF EXISTS idx_responses_resource_type_id;
+DROP INDEX IF EXISTS idx_responses_uri_id;
+DROP INDEX IF EXISTS idx_responses_composite;
+DROP INDEX IF EXISTS idx_responses_content_file;
+DROP INDEX IF EXISTS idx_responses_date_added;
 
+-- Drop the tables
 DROP TABLE IF EXISTS responses CASCADE;
 DROP TABLE IF EXISTS uris CASCADE;
 DROP TABLE IF EXISTS files CASCADE;
@@ -66,18 +88,37 @@ CREATE TABLE responses (
     content_length BIGINT,
     status SMALLINT,
     meta JSONB,
+    date_archived TIMESTAMPTZ,
+    last_modified TIMESTAMPTZ, 
     date_added TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
--- Creating indexes on relevant columns
+-- Indexes on uris table
 CREATE INDEX idx_uris_uri ON uris (uri);
+CREATE INDEX idx_uris_uri_hash ON uris (uri_hash);  -- Keep this only once
+CREATE INDEX idx_uris_uri_hash_uri ON uris (uri_hash, uri);
+CREATE INDEX idx_uris_uri_tgrm ON uris USING gin (uri gin_trgm_ops);
+
+-- Indexes on files table
 CREATE INDEX idx_files_file ON files (file);
+
+-- Indexes on ips table
 CREATE INDEX idx_ips_ip ON ips (ip);
+
+-- Indexes on contentType table
 CREATE INDEX idx_contentType_type ON contentType (type);
+
+-- Indexes on resourceType table
 CREATE INDEX idx_resourceType_type ON resourceType (type);
+
+-- Indexes on responses table
 CREATE INDEX idx_responses_file_id ON responses (file_id);
 CREATE INDEX idx_responses_content_type_id ON responses (content_type_id);
 CREATE INDEX idx_responses_resource_type_id ON responses (resource_type_id);
+CREATE INDEX idx_responses_uri_id ON responses (uri_id);
+CREATE INDEX idx_responses_composite ON responses (uri_id, file_id, content_type_id, resource_type_id);
+CREATE INDEX idx_responses_content_file ON responses (content_type_id, file_id);
+CREATE INDEX idx_responses_date_added ON responses (date_added);
 
 -- Creating the 'responses_full' view
 CREATE OR REPLACE VIEW responses_full AS

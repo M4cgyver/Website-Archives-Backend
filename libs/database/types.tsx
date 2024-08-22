@@ -80,3 +80,33 @@ export const dbConfig = {
     password: 'bun_password', // Password for PostgreSQL connection
     port: 5432, // Port number for PostgreSQL connection
 };
+
+// Singleton worker instance
+let worker: Worker | null = null;
+
+// Singleton promises map
+const promises = new Map<number, { resolve: (value: any) => void, reject: (reason?: any) => void }>();
+
+export const getWorker = () => {
+    if (!worker) {
+        worker = new Worker(new URL('./worker.tsx', import.meta.url), { type: 'module' });
+
+        worker.onmessage = (event: MessageEvent<ActionResponse>) => {
+            const { id, status, data, message } = event.data;
+            const handlers = promises.get(id);
+
+            if (handlers) {
+                if (status === 'error') {
+                    handlers.reject(message);
+                } else {
+                    handlers.resolve(data);
+                }
+
+                // Clean up the handlers once they are used
+                promises.delete(id);
+            }
+        };
+    }
+
+    return { worker, promises };
+};

@@ -6,8 +6,6 @@ import { dbInsertResponse } from '../database';
 
 declare var self: Worker;
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
 // Convert BigInt to Number, with checks
 const convertBigIntToNumber = (obj: any): any => {
     if (typeof obj === 'bigint') {
