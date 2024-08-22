@@ -33,6 +33,13 @@ const connectWorkerPool = async (pool?: Pool): Promise<Pool> => {
     if (globalDbPool === null) {
         console.log(`Creating a new database connection pool ${timet}...`);
         globalDbPool = new Pool(dbConfig);
+        globalDbPool.on('error', (err, client) => {
+            console.error(`Database connection error at ${new Date().toISOString()}:`, err.message);
+
+            if (client) {
+                console.error(`Client details: ${client}`);
+            }
+        });
     }
 
     return globalDbPool;
