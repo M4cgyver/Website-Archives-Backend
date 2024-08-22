@@ -98,7 +98,6 @@ const parseWarcFile = async (file: string) => {
 
                 if (percent > lastPercent) {
                     lastPercent = percent;
-                    await closeDb();
                     postMessage({ file: file, status: "progress", progress: percent });
                 }
             }));
@@ -109,6 +108,7 @@ const parseWarcFile = async (file: string) => {
 
     Promise.allSettled(promises).then(() => {
         console.log(`   Parsed ${file}!`);
+        await closeDb();
         postMessage({ file: file, status: "complete" });
     })
 };
