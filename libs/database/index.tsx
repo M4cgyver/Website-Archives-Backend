@@ -13,6 +13,7 @@ const callAction = (action: string, params?: any): Promise<any> => {
 
 export const connectDb = async (): Promise<any> => callAction('connectDb');
 export const setupDb = async (): Promise<void> => callAction('setupDb');
+export const closeDb = async (): Promise<void> => callAction('closeDb');
 export const dbInsertResponse = async (params: dbInsertResponseParams): Promise<void> => callAction('dbInsertResponse', params);
 export const dbSearchResponses = async (params: dbSearchResponsesParams): Promise<any[]> => callAction('dbSearchResponses', params);
 export const dbRetrieveResponse = async (uri_string: string): Promise<dbRetrieveResponseResult[]> => callAction('dbRetrieveResponse', uri_string);

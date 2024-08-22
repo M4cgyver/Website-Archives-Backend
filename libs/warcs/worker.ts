@@ -2,7 +2,7 @@ import { MultiProgressBars } from 'multi-progress-bars';
 import fs from 'fs/promises';
 import { open } from 'fs/promises';
 import { mWarcParseResponses, type mWarcReadFunction } from '../mwarcparser';
-import { dbInsertResponse } from '../database';
+import { closeDb, connectDb, dbInsertResponse } from '../database';
 
 declare var self: Worker;
 
@@ -92,12 +92,13 @@ const parseWarcFile = async (file: string) => {
         };
 
         try {
-            promises.push(dbInsertResponse(recordData).then(() => {
+            promises.push(dbInsertResponse(recordData).then(async () => {
 
                 const percent = Math.round((Number(recordWarcOffset) / fileSize) * 100);
 
                 if (percent > lastPercent) {
                     lastPercent = percent;
+                    await closeDb();
                     postMessage({ file: file, status: "progress", progress: percent });
                 }
             }));

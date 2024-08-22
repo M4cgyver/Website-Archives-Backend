@@ -5,7 +5,7 @@ import { dbConfig, dbInsertResponseParams, dbSearchResponsesParams, dbSearchResp
 
 declare var self: Worker;
 
-const timet =  process.hrtime()[1];
+const timet = process.hrtime()[1];
 let globalDbPool: Pool | null = null;
 
 /*
@@ -65,6 +65,13 @@ const setupWorkerDb = async () => {
         throw err;
     }
 };
+
+const closeWorkerDb = async () => {
+    if (globalDbPool) {
+        await globalDbPool.end();
+        globalDbPool = null;
+    }
+}
 
 // Insert response into the database
 async function dbWorkerInsertResponse(params: dbInsertResponseParams): Promise<void> {
@@ -199,7 +206,7 @@ const dbWorkerRetrieveLatestResponses = async (total: number): Promise<dbSearchR
 self.onmessage = async (event: MessageEvent) => {
     const { id, action, params } = event.data;
     let response;
-    
+
     try {
         switch (action) {
             case 'connectDb':
@@ -208,6 +215,9 @@ self.onmessage = async (event: MessageEvent) => {
 
             case 'setupDb':
                 response = { status: 'sucess', data: await setupWorkerDb() };
+                break;
+            case 'closeDb':
+                response = { status: 'sucess', data: await closeWorkerDb() };
                 break;
             case 'dbInsertResponse':
                 response = { status: 'sucess', data: await dbWorkerInsertResponse(params) };
