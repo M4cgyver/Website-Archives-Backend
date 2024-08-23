@@ -1,6 +1,6 @@
 import { getWorker, type dbInsertResponseParams, type dbRetrieveResponseFullResult, type dbRetrieveResponseResult, type dbSearchResponseResult, type dbSearchResponsesParams } from "./types";
 
-const { worker, promises } = getWorker();
+const { worker, promises } = await getWorker();
 
 const callAction = (action: string, params?: any): Promise<any> => {
     return new Promise((resolve, reject) => {

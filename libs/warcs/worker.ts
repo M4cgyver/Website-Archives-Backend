@@ -1,8 +1,7 @@
-import { MultiProgressBars } from 'multi-progress-bars';
 import fs from 'fs/promises';
 import { open } from 'fs/promises';
 import { mWarcParseResponses, type mWarcReadFunction } from '../mwarcparser';
-import { closeDb, connectDb, dbInsertResponse } from '../database';
+import { closeDb, dbInsertResponse } from '../database';
 
 declare var self: Worker;
 
@@ -115,6 +114,8 @@ const parseWarcFile = async (file: string) => {
 };
 
 self.onmessage = (event: MessageEvent) => {
+    console.log("entry");
+
     const data = event.data;
 
     if (typeof data !== 'object' || !('file' in data)) {
@@ -123,5 +124,6 @@ self.onmessage = (event: MessageEvent) => {
     }
 
     console.log(`WARC Worker: starting to parse file: ${data.file}`);
+    
     parseWarcFile(data.file);
 };

@@ -87,11 +87,18 @@ let worker: Worker | null = null;
 // Singleton promises map
 const promises = new Map<number, { resolve: (value: any) => void, reject: (reason?: any) => void }>();
 
-export const getWorker = () => {
+export const getWorker = async () => {
     if (!worker) {
-        worker = new Worker(new URL('./worker.tsx', import.meta.url), { type: 'module' });
+        const build = await Bun.build({
+            entrypoints: ['libs/database/worker.tsx'],
+            outdir: 'libs/database/build',
+            target: 'bun',
+            minify: true,
+        })
 
-        worker.onmessage = (event: MessageEvent<ActionResponse>) => {
+        worker = new Worker(build.outputs[0].path);
+
+        worker.onmessage = event => {
             const { id, status, data, message } = event.data;
             const handlers = promises.get(id);
 

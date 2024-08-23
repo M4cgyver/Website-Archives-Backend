@@ -133,11 +133,30 @@ export const parseWarcFiles = async () => {
         workers.push(worker);
     }) */
 
+    const build = await Bun.build({
+        entrypoints: ['libs/warcs/worker.ts'],
+        outdir: 'libs/warcs/build',
+        target: 'bun',
+        minify: true,
+    })
+
+    //BUG: wierd perms with docker prevent worker from working, load manually
+    const blob = await Bun.file(build.outputs[0].path);
+    const url = URL.createObjectURL(blob);
+
     const startWorker = async (file: string) => {
         if (mpd)
             mpd.addTask(file, { type: 'percentage' });
 
-        const worker = new Worker("libs/warcs/worker.ts");
+
+        const worker = new Worker(url, {
+            smol: true,
+          });
+
+        worker.onerror = event => {
+            console.log("WORKER ERROR", event.message)
+        }
+        //const worker = new Worker(new URL("./build/worker.js", import.meta.url).href);
 
         worker.onmessage = event => {
             const { file, status, progress, data } = event.data;
@@ -158,12 +177,15 @@ export const parseWarcFiles = async () => {
                 else
                     console.log(`${file} complete!`);
 
+                worker.terminate();
                 const nextFile = fileSorted.pop();
 
                 if (nextFile)
                     startWorker(nextFile);
             }
         }
+
+        console.log(`Queueing worker for file ${file}...`)
 
         worker.postMessage({ file: file });
         workers.push(worker);
