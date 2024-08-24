@@ -84,6 +84,7 @@ export const dbConfig:PoolConfig = {
 
 // Singleton worker instance
 let worker: Worker | null = null;
+let channel = new MessageChannel();
 
 // Singleton promises map
 const promises = new Map<number, { resolve: (value: any) => void, reject: (reason?: any) => void }>();
@@ -116,5 +117,8 @@ export const getWorker = async () => {
         };
     }
 
-    return { worker, promises };
+    if (!channel)
+        channel = new MessageChannel();
+
+    return { worker, channel, promises };
 };

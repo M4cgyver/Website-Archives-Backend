@@ -218,7 +218,7 @@ const dbWorkerRetrieveLatestResponses = async (total: number): Promise<dbSearchR
 };
 
 // Handle incoming messages
-self.onmessage = async (event: MessageEvent) => {
+const handleMessage = async (event: MessageEvent) => {
     const { id, action, params } = event.data;
     let response;
 
@@ -260,3 +260,5 @@ self.onmessage = async (event: MessageEvent) => {
 
     postMessage({ id, ...response });
 };
+
+self.onmessage = handleMessage;
