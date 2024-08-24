@@ -225,7 +225,7 @@ const handleMessage = async (event: MessageEvent) => {
     try {
         switch (action) {
             case 'connectDb':
-                response = { status: 'sucess', data: await connectWorkerDb(params) };
+                response = { status: 'sucess', data: await connectWorkerDb() };
                 break;
 
             case 'setupDb':
