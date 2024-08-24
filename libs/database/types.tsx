@@ -1,3 +1,4 @@
+import type { PoolConfig } from "pg";
 
 // Type definitions for responses
 export interface dbResponseMeta {
@@ -73,7 +74,7 @@ export interface dbRetrieveResponseFullResult {
 }
 
 // Declare a global variable for the database client
-export const dbConfig = {
+export const dbConfig:PoolConfig = {
     user: 'bun_user', // Username for PostgreSQL connection
     host: 'm4cgyver-archives-backend-postgres', // Hostname or service name defined in Docker Compose
     database: 'webpages', // Database name
@@ -92,7 +93,7 @@ export const getWorker = async () => {
         const build = await Bun.build({
             entrypoints: ['libs/database/worker.tsx'],
             outdir: 'libs/database/build',
-            target: 'bun',
+            target: (process.env.WORKER_TARGET as Target) ?? "node",
             minify: true,
         })
 

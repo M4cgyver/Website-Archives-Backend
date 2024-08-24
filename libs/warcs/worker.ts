@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import { open } from 'fs/promises';
 import { mWarcParseResponses, type mWarcReadFunction } from '../mwarcparser';
-import { closeDb, dbInsertResponse } from '../database';
+import { closeDb, connectDb, dbInsertResponse } from '../database';
 
 declare var self: Worker;
 
@@ -23,6 +23,7 @@ const convertBigIntToNumber = (obj: any): any => {
 };
 
 const readFile = async (filename: string): Promise<mWarcReadFunction> => {
+    
     const fd = await open(filename, 'r');
     const fileStats = await fd.stat();
     const fileSize = fileStats.size;
@@ -125,5 +126,7 @@ self.onmessage = (event: MessageEvent) => {
 
     console.log(`WARC Worker: starting to parse file: ${data.file}`);
     
-    parseWarcFile(data.file);
+    connectDb({max: 4}).then((()=>{
+        parseWarcFile(data.file);
+    }))
 };

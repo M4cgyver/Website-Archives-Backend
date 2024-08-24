@@ -1,5 +1,6 @@
 import { MultiProgressBars } from 'multi-progress-bars';
 import fs from 'fs/promises';
+import type { Target } from 'bun';
 const progressType: string = process.env.WARC_PROCESSING_STATUS ?? "bar";
 
 export const parseWarcFilesProgress: Record<string, number> = {};
@@ -136,7 +137,7 @@ export const parseWarcFiles = async () => {
     const build = await Bun.build({
         entrypoints: ['libs/warcs/worker.ts'],
         outdir: 'libs/warcs/build',
-        target: 'bun',
+        target: (process.env.WORKER_TARGET as Target) ?? "node",
         minify: true,
     })
 
@@ -149,9 +150,7 @@ export const parseWarcFiles = async () => {
             mpd.addTask(file, { type: 'percentage' });
 
 
-        const worker = new Worker(url, {
-            smol: true,
-          });
+        const worker = new Worker(url);
 
         worker.onerror = event => {
             console.log("WORKER ERROR", event.message)

@@ -1,6 +1,6 @@
 import { sleep } from "bun";
 import fs from "fs";
-import { Client, Pool, type PoolClient } from 'pg';
+import { Client, Pool, type PoolClient, type PoolConfig } from 'pg';
 import { dbConfig, type dbInsertResponseParams, type dbSearchResponsesParams, type dbSearchResponseResult, type dbRetrieveResponseResult, type dbRetrieveResponseFullResult } from "./types";
 
 declare var self: Worker;
@@ -29,17 +29,25 @@ const connectWorkerDb = async (): Promise<Client> => {
 */
 
 // Create or reuse a connection pool
-const connectWorkerPool = async (pool?: Pool): Promise<Pool> => {
-    if (globalDbPool === null) {
-        console.log(`Creating a new database connection pool ${timet}...`);
-        globalDbPool = new Pool(dbConfig);
-        globalDbPool.on('error', (err, client) => {
-            console.error(`Database connection error at ${new Date().toISOString()}:`, err.message);
+const connectWorkerPool = async (config?:PoolConfig): Promise<Pool> => {
+    const conf = {...dbConfig, ...config}
 
-            if (client) {
-                console.error(`Client details: ${client}`);
-            }
-        });
+    if (globalDbPool === null) {
+        try {
+            console.log(`Creating a new database connection pool ${timet} conns ${conf.max} ${conf.maxUses}...`);
+            globalDbPool = new Pool({...dbConfig, ...config});
+            globalDbPool.on('error', (err, client) => {
+                console.error(`Database connection error at ${new Date().toISOString()}:`, err.message);
+
+                if (client) {
+                    console.error(`Client details: ${client}`);
+                }
+            });
+        } catch (e) {
+            console.log(`Failed to connect ${e.message} retrying...`)
+            await new Promise(resolve=>setTimeout(resolve, 3000))
+            return connectWorkerPool();
+        }
     }
 
     return globalDbPool;
@@ -217,7 +225,7 @@ self.onmessage = async (event: MessageEvent) => {
     try {
         switch (action) {
             case 'connectDb':
-                response = { status: 'sucess', data: await connectWorkerDb() };
+                response = { status: 'sucess', data: await connectWorkerDb(params) };
                 break;
 
             case 'setupDb':

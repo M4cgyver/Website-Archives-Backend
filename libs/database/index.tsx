@@ -1,3 +1,4 @@
+import type { PoolConfig } from "pg";
 import { getWorker, type dbInsertResponseParams, type dbRetrieveResponseFullResult, type dbRetrieveResponseResult, type dbSearchResponseResult, type dbSearchResponsesParams } from "./types";
 
 const { worker, promises } = await getWorker();
@@ -11,7 +12,7 @@ const callAction = (action: string, params?: any): Promise<any> => {
     });
 };
 
-export const connectDb = async (): Promise<any> => callAction('connectDb');
+export const connectDb = async (params?:PoolConfig): Promise<any> => callAction('connectDb', params);
 export const setupDb = async (): Promise<void> => callAction('setupDb');
 export const closeDb = async (): Promise<void> => callAction('closeDb');
 export const dbInsertResponse = async (params: dbInsertResponseParams): Promise<void> => callAction('dbInsertResponse', params);
