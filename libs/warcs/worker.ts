@@ -56,32 +56,54 @@ const parseWarcFile = async (file: string) => {
 
     try {
         for await (const [header, http, content, metadata] of warc) {
+            const {
+                "warc-type": warcType,
+                "warc-record-id": recordId,
+                "warc-warcinfo-id": warcinfoId,
+                "warc-concurrent-to": concurrentTo,
+                "warc-target-uri": targetUri,
+                "warc-date": warcDate,
+                "warc-ip-address": ipAddress,
+                "warc-block-digest": blockDigest,
+                "warc-payload-digest": payloadDigest,
+                "content-type": contentType,
+                "content-length": contentLength
+            } = header;
+
+            const {
+                date,
+                location,
+                "content-type": responseType,
+                "content-length": responseContentLength,
+                "last-modified": lastModified,
+                "transfer-encoding": transferEncoding,
+                status
+            } = http;
+
+            const { recordWarcOffset, recordResponseOffset, recordContentOffset } = metadata;
+
             const recordData = {
-                uri_string: header["warc-target-uri"].replace(/<|>/g, ''),
+                uri_string: targetUri.replace(/<|>/g, ''),
                 file_string: `warcs/${file}`,
-                content_type_string: http["content-type"] ?? "application/unknown",
+                content_type_string: responseType ?? "application/unknown",
                 resource_type_string: 'response',
-                record_length: BigInt(metadata.recordResponseOffset),
-                record_offset: BigInt(metadata.recordWarcOffset),
-                content_length: BigInt(http["content-length"]),
-                content_offset: BigInt(metadata.recordContentOffset),
-                status: http.status,
+                record_length: BigInt(recordResponseOffset),
+                record_offset: BigInt(recordWarcOffset),
+                content_length: BigInt(responseContentLength),
+                content_offset: BigInt(recordContentOffset),
+                status: status,
                 meta: convertBigIntToNumber(http)
             };
 
-            promises.push(
-                dbInsertResponse(recordData)
-                    .then(() => {
-                        const percent = Math.round((Number(metadata.recordWarcOffset) / fileSize) * 100);
-                        if (percent > lastPercent) {
-                            lastPercent = percent;
-                            postMessage({ file: file, status: "progress", progress: percent });
-                        }
-                    })
-                    .catch((e: any) => {
-                        console.log(`Failed to insert record ${e.message}`, recordData);
-                    })
-            );
+            promises.push(dbInsertResponse(recordData).then(async () => {
+                const percent = Math.round((Number(recordWarcOffset) / fileSize) * 100);
+                if (percent > lastPercent) {
+                    lastPercent = percent;
+                    postMessage({ file: file, status: "progress", progress: percent });
+                }
+            }).catch((e: any) => {
+                console.log(`Failed to insert record ${e.message}`, recordData);
+            }));
         }
     } catch (error) {
         if (error instanceof RangeError) {
@@ -100,6 +122,7 @@ const parseWarcFile = async (file: string) => {
         });
     }
 };
+
 
 
 self.onmessage = async (event: MessageEvent) => {
