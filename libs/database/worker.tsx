@@ -253,12 +253,12 @@ const handleMessage = async (data: { id: number; action: string; params: any }) 
             case 'dbUpdateFileProgress':
                 const {file, progress} = params;
                 parseWarcFilesProgress[file] = progress;
-                log(`progress: ${JSON.stringify(parseWarcFilesProgress)}`)
+                //log(`progress: ${JSON.stringify(parseWarcFilesProgress)}`)
                 break;
 
             case 'dbRetrieveFileProgress':
                 response = { status: 'sucess', data: parseWarcFilesProgress};
-                log(`RETURN progress: ${JSON.stringify(parseWarcFilesProgress)}`)
+                ///log(`RETURN progress: ${JSON.stringify(parseWarcFilesProgress)}`)
                 break; 
 
             case 'dbInsertResponse':
