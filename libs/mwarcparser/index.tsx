@@ -125,14 +125,14 @@ export const mWarcParseResponses = (
     let offset = 0n;
     let done = false;
 
-    console.log("mWarcParseResponses initialized with skipContent:", skipContent, "readBufferSize:", readBufferSize);
+    //console.log("mWarcParseResponses initialized with skipContent:", skipContent, "readBufferSize:", readBufferSize);
 
     return {
         [Symbol.asyncIterator]() {
             return {
                 async next(): Promise<IteratorResult<[mWarcHeaderMap, mWarcHeaderMap, Buffer?, mWarcHeaderMap]>> {
                     if (done) {
-                        console.log("Parsing complete.");
+                        //console.log("Parsing complete.");
                         return { done: true, value: undefined };
                     }
 
@@ -147,68 +147,68 @@ export const mWarcParseResponses = (
 
                     try {
                         do {
-                            console.log("Starting new record parsing loop...");
+                            //console.log("Starting new record parsing loop...");
                             let bufferToParse: string = backbuffer;
                             let bufferChunks: Array<string> = [];
                             metadata.recordWarcOffset = offset - BigInt(bufferToParse.length);
-                            console.log("Current offset:", offset, "Backbuffer length:", bufferToParse.length);
+                            //console.log("Current offset:", offset, "Backbuffer length:", bufferToParse.length);
 
                             // Get a minimum of 2 chunks (1 complete chunk and 1+ incomplete or unnecessary chunks)
                             while (bufferChunks.length < 2) {
-                                console.log("Reading additional data to form chunks...");
+                                //console.log("Reading additional data to form chunks...");
                                 const newChunks = bufferToParse.split("\r\n\r\n");
                                 bufferChunks = newChunks.length > 1 ? newChunks : bufferChunks;
-                                console.log("Buffer chunks:", bufferChunks.length);
+                                //console.log("Buffer chunks:", bufferChunks.length);
 
                                 if (bufferChunks.length < 2) {  // Need more data to complete chunks
                                     const possiblePromise = await read(offset, readBufferSize);
                                     bufferToParse += possiblePromise.toString();
-                                    console.log("Read buffer:", possiblePromise.toString());
+                                    //console.log("Read buffer:", possiblePromise.toString());
 
                                     // Increase the offset
                                     offset += readBufferSize;
-                                    console.log("Updated offset after reading:", offset);
+                                    //console.log("Updated offset after reading:", offset);
                                 }
                             }
 
                             // Get the header from the first chunk
                             header = mWarcParseHeader(bufferChunks[0]);
-                            console.log("Parsed WARC header:", header);
+                            //console.log("Parsed WARC header:", header);
 
                             // Get the content length
                             const contentLength = header['content-length'] ? BigInt(header['content-length']) : 0n;
-                            console.log("Content length:", contentLength);
+                            //console.log("Content length:", contentLength);
 
                             if (header['warc-type'] !== 'response' || contentLength === 0n) {
                                 // Skip the remaining bytes
                                 const remainingBytes = contentLength - BigInt(bufferToParse.length - bufferChunks[0].length - 4);
                                 offset += remainingBytes > 0n ? remainingBytes : 0n;
                                 backbuffer = remainingBytes < 0n ? bufferToParse.slice(bufferToParse.length + Number(remainingBytes) + 4) : "";
-                                console.log("Skipping non-response record, updated offset:", offset, "Remaining bytes to skip:", remainingBytes);
+                                //console.log("Skipping non-response record, updated offset:", offset, "Remaining bytes to skip:", remainingBytes);
                             } else {
                                 // Read until we have two chunks instead of one now
-                                console.log("Processing response record...");
+                                //console.log("Processing response record...");
                                 // Get a minimum of 3 chunks (2 complete chunks and 1+ incomplete or unnecessary chunks)
                                 while (bufferChunks.length < 3) {
-                                    console.log("Reading additional data to complete HTTP chunks...");
+                                    //console.log("Reading additional data to complete HTTP chunks...");
                                     const newChunks = bufferToParse.split("\r\n\r\n");
                                     bufferChunks = (newChunks.length > 2) ? newChunks : bufferChunks;
 
                                     if (bufferChunks.length < 3) {
                                         const possiblePromise = await read(offset, readBufferSize);
                                         bufferToParse += possiblePromise.toString();
-                                        console.log("Read buffer for HTTP chunk completion:", possiblePromise.toString());
+                                        //console.log("Read buffer for HTTP chunk completion:", possiblePromise.toString());
 
                                         // Increase the offset
                                         offset += readBufferSize;
-                                        console.log("Updated offset after HTTP chunk read:", offset);
+                                        //console.log("Updated offset after HTTP chunk read:", offset);
                                     }
                                 }
 
                                 http = mWarcParseHeader(bufferChunks[1]);
                                 const httpContentLength = contentLength - BigInt(bufferChunks[1].length);
-                                console.log("Parsed HTTP header:", http);
-                                console.log("HTTP content length:", httpContentLength);
+                                //console.log("Parsed HTTP header:", http);
+                                //console.log("HTTP content length:", httpContentLength);
 
                                 // Load the remaining bytes
                                 const remainingBytes = httpContentLength - BigInt(bufferToParse.length - bufferChunks[0].length - bufferChunks[1].length - 8);
@@ -218,24 +218,24 @@ export const mWarcParseResponses = (
                                 offset += remainingBytes > 0n ? remainingBytes : 0n;
                                 backbuffer = remainingBytes < 0n ? bufferToParse.slice(bufferToParse.length + Number(remainingBytes) + 4) : "";
 
-                                console.log("Content buffer length:", content?.length);
-                                console.log("Updated offset after content processing:", offset);
+                                //console.log("Content buffer length:", content?.length);
+                                //console.log("Updated offset after content processing:", offset);
 
                                 metadata.recordResponseOffset = metadata.recordWarcOffset + BigInt(bufferChunks[0].length + 4);
                                 metadata.recordContentOffset = metadata.recordResponseOffset + BigInt(bufferChunks[1].length + 4);
                                 http['content-length'] = httpContentLength;
 
-                                console.log("Updated metadata:", metadata);
+                                //console.log("Updated metadata:", metadata);
                             }
                         } while (header && header['warc-type'] !== 'response');
 
                         if (!header) {
                             done = true;
-                            console.log("No more headers, marking parsing as complete.");
+                            //console.log("No more headers, marking parsing as complete.");
                             return { done: true, value: undefined };
                         }
 
-                        console.log("Yielding parsed response with WARC header, HTTP header, content, and metadata.");
+                        //console.log("Yielding parsed response with WARC header, HTTP header, content, and metadata.");
                         return {
                             done: false,
                             value: [header, http, content, metadata],
@@ -243,8 +243,8 @@ export const mWarcParseResponses = (
                     } catch (err) {
                         console.error("Error encountered:", err);
                         if (err instanceof RangeError) {
-                            done = true;
-                            console.log("RangeError encountered, marking parsing as complete.");
+                            done = true;  // Set done to true when a RangeError is encountered
+                            //console.log("RangeError encountered, marking parsing as complete.");
                             return { done: true, value: undefined };
                         } else {
                             throw err;
@@ -291,7 +291,7 @@ export const mWarcParseResponseContent = (
                     if (chHex.endsWith("\r\n") && chHex !== "0\r\n") {
                         ;
                         chOffset = hexToBn(chHex.slice(0, chHex.length - 2), { unsigned: true });
-                        //console.log("hex", chHex, chOffset)
+                        ////console.log("hex", chHex, chOffset)
                         const startSlice = chPosition
                         const endSlice = chPosition + chOffset;
                         const slice = chunk.slice(Number(startSlice), Number(endSlice));
