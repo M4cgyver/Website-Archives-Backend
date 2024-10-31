@@ -1,9 +1,11 @@
+import type { BunRequest } from "bunrest/src/server/request";
+import type { BunResponse } from "bunrest/src/server/response";
 import express, { Request, Response } from "express";
 import fs from "fs";
 import os from "os";
 import path from "path";
 
-export const statistics = async (req: Request, res: Response) => {
+export const statistics = async (req: BunRequest, res: BunResponse) => {
     const warcsDirectory = "warcs/"; // Replace with your actual warcs directory path
 
     try {

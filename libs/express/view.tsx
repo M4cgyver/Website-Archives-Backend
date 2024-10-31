@@ -1,20 +1,32 @@
-import express, { Request, Response } from "express";
 import { open } from 'fs/promises';
 import { Transform } from 'stream';
 import { mWarcParseResponseContent } from "../mwarcparser";
 import { httpRedirect } from "../http";
 import { dbRetrieveResponse } from "../database";
+import type { BunRequest } from 'bunrest/src/server/request';
+import type { BunResponse } from 'bunrest/src/server/response';
+import { id } from '.';
 
-export const view = async (req: Request, res: Response) => {
+export const view = async (req: BunRequest, res: BunResponse) => {
     const uri = req.query.uri as string | undefined;
     const redirect = req.query.redirect === 'true';
 
+    console.log(`WS-EXPRESS ${id}: Requesting to view: ${uri}`);
+
     if (!uri) {
-        return res.status(400).json({ error: "Missing query parameter: uri" });
+        return res.status(400).json({ error: "Missing query parameter: uri", data: {path: req.path, uri: req.query}});
     }
 
     try {
-        const [record] = await dbRetrieveResponse(uri);
+        const datares = await dbRetrieveResponse(uri);
+
+        if (!datares) {
+            //No data from db?????????????/
+            console.log(`WS-EXPRESS ${id}: no data from DB???? retrying`);
+            return view(req, res);
+        }
+
+        const [record] = datares;
 
         if (!record) {
             return res.status(404).json({ error: `No record found with the given uri ${uri}` });
@@ -28,6 +40,8 @@ export const view = async (req: Request, res: Response) => {
             status_r: status,
             meta_r: meta,
         } = record;
+
+        console.log(`WS-EXPRESS ${id}: found record: ${record}`);
 
         const { location, 'transfer-encoding': transferEncoding } = meta || {};
 
@@ -55,27 +69,38 @@ export const view = async (req: Request, res: Response) => {
 
         const finalStream = await mWarcParseResponseContent(readStream, transferEncoding);
 
+        console.log(`WS-EXPRESS ${id}: loaded content, prepairing to send...`);
+
         if (redirect && contentType.includes("text/")) {
-            let str = "";
-            finalStream.on('data', chunk => {
-                str += chunk;
-            });
+            return new Promise((suc, er) => {
+                console.log(`WS-EXPRESS ${id}: loaded content, prepairing to send... need to parse though first...`);
 
-            finalStream.on('end', async () => {
-                try {
-                    const redirectUrl = process.env.REDIRECT_BASE_URL ?? "https://redirect-url-not-defined";
-                    const parsed = await httpRedirect(str, uri, redirectUrl, contentType);
-                    res.send(parsed);
-                } catch (err) {
-                    console.error('Redirect error:', err);
-                    res.status(500).send('Internal Server Error');
-                } finally {
-                    await fd.close();
-                }
-            });
-
+                let str = "";
+                finalStream.on('data', chunk => {
+                    str += chunk;
+                });
+    
+                finalStream.on('end', async () => {
+                    try {
+                        console.log(`WS-EXPRESS ${id}: chunk size ${str.length}`);
+                        const redirectUrl = process.env.REDIRECT_BASE_URL ?? "https://redirect-url-not-defined";
+                        const parsed = await httpRedirect(str, uri, redirectUrl, contentType);
+                        console.log(`WS-EXPRESS ${id}: parsed chunk size ${parsed.length}`);
+                        res.status(200).send(parsed);
+                        suc(null);
+                    } catch (err:any) {
+                        console.error('Redirect error:', err);
+                        res.status(500).send({error: 'Internal Server Error, failed to parse', message: err.message});
+                        er(err)
+                    } finally {
+                        await fd.close();
+                    }
+                });
+    
+            })
+            
         } else {
-            finalStream.pipe(res);
+            res.status(200).send(finalStream)
 
             finalStream.on('end', async () => {
                 await fd.close();

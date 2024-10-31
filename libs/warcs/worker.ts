@@ -2,8 +2,12 @@ import fs from 'fs/promises';
 import { open } from 'fs/promises';
 import { mWarcParseResponses, type mWarcReadFunction } from '../mwarcparser';
 import { closeDb, connectDb, dbInsertResponse } from '../database';
+import { genid } from '../genid';
 
 declare var self: Worker;
+
+const promises: Promise<any>[] = [];
+const promiseRets = new Map<number, { resolve: (value: any) => void, reject: (reason?: any) => void }>();
 
 // Convert BigInt to Number, with checks
 const convertBigIntToNumber = (obj: any): any => {
@@ -23,7 +27,7 @@ const convertBigIntToNumber = (obj: any): any => {
 };
 
 const readFile = async (filename: string): Promise<mWarcReadFunction> => {
-    
+
     const fd = await open(filename, 'r');
     const fileStats = await fd.stat();
     const fileSize = fileStats.size;
@@ -44,7 +48,6 @@ const readFile = async (filename: string): Promise<mWarcReadFunction> => {
 
 const parseWarcFile = async (file: string) => {
     const warc = mWarcParseResponses(await readFile(`warcs/${file}`), { skipContent: true });
-    const promises = [];
 
     console.log(`   Parsing ${file}...`);
 
@@ -104,6 +107,12 @@ const parseWarcFile = async (file: string) => {
         } catch (e: any) {
             console.log(`Failed to insert record ${e.message}`, recordData);
         }
+
+        promises.push(new Promise((resolve, reject) => {
+            const id = genid(); // Unique ID for each request
+            promiseRets.set(id, { resolve, reject });
+        }));
+
     }
 
     Promise.allSettled(promises).then(() => {
@@ -114,19 +123,20 @@ const parseWarcFile = async (file: string) => {
     })
 };
 
-self.onmessage = (event: MessageEvent) => {
+self.onmessage = async (event: MessageEvent) => {
     console.log("entry");
 
     const data = event.data;
+    const { file, channel } = data;
 
-    if (typeof data !== 'object' || !('file' in data)) {
+    if (typeof data !== 'object' || !file) {
         console.log(`WARC Worker, invalid format ${data}`);
         return;
     }
 
-    console.log(`WARC Worker: starting to parse file: ${data.file}`);
-    
-    connectDb({max: 4}).then((()=>{
-        parseWarcFile(data.file);
-    }))
+    await connectDb(undefined, {connType: "net", host: "127.0.0.1", port: 9824});
+
+    console.log(`WARC Worker: starting to parse file: ${file} ${channel}`);
+
+    parseWarcFile(data.file);
 };

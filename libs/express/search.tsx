@@ -1,7 +1,8 @@
-import express, { Request, Response } from "express";
+import type { BunRequest } from "bunrest/src/server/request";
 import { dbSearchResponses } from "../database";
+import type { BunResponse } from "bunrest/src/server/response";
 
-export const search = async (req: Request, res: Response) => {
+export const search = async (req: BunRequest, res: BunResponse) => {
     // Extract and validate query parameters
     const uri = req.query.uri as string | undefined;
     const total = parseInt(req.query.total as string, 10) || 32; // Default to 32 if not provided
@@ -33,13 +34,10 @@ export const search = async (req: Request, res: Response) => {
 
         // Return the fetched responses as JSON
         res.json(responses);
-    } catch (error) {
+    } catch (error:any) {
         // Log and return detailed error information
-        console.error('Error retrieving responses:', {
-            message: (error as Error).message,
-            stack: (error as Error).stack,
-            name: (error as Error).name,
-        });
+        console.error('Error retrieving responses:', error.message, error)
+
         res.status(500).json({
             error: "Failed to retrieve responses",
             details: (error as Error).message,

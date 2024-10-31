@@ -1,134 +1,146 @@
-import { sleep } from "bun";
 import fs from "fs";
-import { Client, Pool, type PoolClient, type PoolConfig } from 'pg';
-import { dbConfig, type dbInsertResponseParams, type dbSearchResponsesParams, type dbSearchResponseResult, type dbRetrieveResponseResult, type dbRetrieveResponseFullResult } from "./types";
+import { Client, Pool, type PoolClient, type PoolConfig } from "pg";
+import {
+    dbConfig,
+    type dbInsertResponseParams,
+    type dbSearchResponsesParams,
+    type dbSearchResponseResult,
+    type dbRetrieveResponseResult,
+    type dbRetrieveResponseFullResult
+} from "./types";
+import net, { Socket } from "net";
 
 declare var self: Worker;
 
 const timet = process.hrtime()[1];
 let globalDbPool: Pool | null = null;
+let server: net.Server | null = null;
+const port = 9824;
+const host = "0.0.0.0";
 
-/*
-const connectWorkerDb = async (): Promise<Client> => {
-    if (!globalDbClient) {
-        console.log("Connecting to the database...");
-        globalDbClient = new Client(dbConfig);
+//TODO: Implement in the db later
+const parseWarcFilesProgress: Record<string, number> = {};
 
-        try {
-            await globalDbClient.connect();
-        } catch (error) {
-            console.error("Error connecting to the database:", error);
-            await sleep(1000);
-            globalDbClient = null;
-            return connectWorkerDb();
-        }
-    }
-
-    return globalDbClient;
+// Custom log function to send messages to the parent thread
+const log = (message: string) => {
+    postMessage({ action: 'log', message });
 };
-*/
+
+// Setup a worker socket server to accept connections
+const setupWorkerDbSocket = () => {
+    log("2 Setting up db socket...");
+    server = net.createServer((socket: Socket) => {
+        log(`Client connected: ${socket.remoteAddress}:${socket.remotePort}`);
+
+        socket.on("data", async (data: Buffer) => {
+            const jsonarrstr = `[${data.toString("utf-8").replace(/}{/g, '},{')}]`
+            try {
+                //const response = await handleMessage(JSON.parse(data.toString("utf-8")));
+                //socket.write(JSON.stringify(response) + "\n");
+                const arr = JSON.parse(jsonarrstr);
+                arr.forEach((data:any) => handleMessage(data).then(ret=>socket.write(JSON.stringify(ret))));
+            } catch (error: any) {
+                log("Error handling message: " + error.message + "\r\n" + data.toString("utf-8") + "\r\n" + jsonarrstr);
+                socket.write(JSON.stringify({ status: "error", message: error.message }) + "\n");
+            }
+        });
+
+        socket.on("end", () => log("Client disconnected"));
+        socket.on("error", (err: Error) => log("Socket error: " + err.message));
+    });
+
+    server.listen(port, host, () => log(`Server listening on ${host}:${port}`));
+    server.on("error", (err: Error) => log("Server error: " + err.message));
+};
 
 // Create or reuse a connection pool
-const connectWorkerPool = async (config?:PoolConfig): Promise<Pool> => {
-    const conf = {...dbConfig, ...config}
+const connectWorkerPool = async (config?: PoolConfig): Promise<Pool> => {
+    const conf = { ...dbConfig, ...config };
 
-    if (globalDbPool === null) {
+    if (!globalDbPool) {
         try {
-            console.log(`Creating a new database connection pool ${timet} conns ${conf.max} ${conf.maxUses}...`);
-            globalDbPool = new Pool({...dbConfig, ...config});
-            globalDbPool.on('error', (err, client) => {
-                console.error(`Database connection error at ${new Date().toISOString()}:`, err.message);
+            log(`Creating a new pool at ${timet}`);
+            globalDbPool = new Pool(conf);
 
-                if (client) {
-                    console.error(`Client details: ${client}`);
-                }
+            globalDbPool.on("error", (err: Error) => {
+                log(`Database error: ${err.message}`);
             });
-        } catch (e) {
-            console.log(`Failed to connect ${e.message} retrying...`)
-            await new Promise(resolve=>setTimeout(resolve, 3000))
-            return connectWorkerPool();
+        } catch (e: any) {
+            log("Failed to connect: " + e.message);
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            return connectWorkerPool(config);
         }
     }
-
     return globalDbPool;
 };
 
+// Establish a connection and start the server
 const connectWorkerDb = async () => {
     try {
+        log("Connecting to db...");
         const pool = await connectWorkerPool();
         const client = await pool.connect();
+        log("Database connection established");
         client.release();
+        log("Creating net socket...");
+        setupWorkerDbSocket();
         return { status: "connected" };
-    } catch (error) {
-        // Ensure `error` is of type `Error` to access `message`
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        return { status: 'error', message: errorMessage };
+    } catch (error: any) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        return { status: "error", message: errorMessage };
     }
 };
 
+// Setup the database with SQL script
 const setupWorkerDb = async () => {
-    const client = await connectWorkerPool();
+    const pool = await connectWorkerPool();
 
     try {
         console.time("Resetting db");
-        const sqlSetup = fs.readFileSync('libs/database/setup.pg.sql', 'utf8');
+        const sqlSetup = fs.readFileSync("libs/database/setup.pg.sql", "utf8");
+        await pool.query(sqlSetup);
         console.timeEnd("Resetting db");
-        console.log("Successfully reset db");
-        await client.query(sqlSetup);
-    } catch (err) {
-        console.error("Error setting up the database:", err);
+        log("Successfully reset the database");
+    } catch (err: any) {
+        log("Error setting up the database: " + err.message);
         throw err;
     }
 };
 
+// Close the worker DB and server
 const closeWorkerDb = async () => {
     if (globalDbPool) {
         await globalDbPool.end();
         globalDbPool = null;
     }
-}
+    if (server) {
+        server.close();
+        server = null;
+    }
+};
 
 // Insert response into the database
-async function dbWorkerInsertResponse(params: dbInsertResponseParams): Promise<void> {
-    const client = await connectWorkerPool();
-
-    const {
-        uri_string,
-        file_string,
-        content_type_string,
-        resource_type_string,
-        record_length,
-        record_offset,
-        content_offset,
-        content_length,
-        status,
-        meta,
-    } = params;
-
+const dbWorkerInsertResponse = async (params: dbInsertResponseParams): Promise<void> => {
+    const pool = await connectWorkerPool();
     const query = `
-        SELECT insert_response(
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
-        );
-    `;
+    SELECT insert_response(
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+    );
+  `;
+    const values = [
+        params.uri_string, params.file_string, params.content_type_string,
+        params.resource_type_string, params.record_length, params.record_offset,
+        params.content_offset, params.content_length, params.status,
+        JSON.stringify(params.meta)
+    ];
 
     try {
-        await client.query(query, [
-            uri_string,
-            file_string,
-            content_type_string,
-            resource_type_string,
-            record_length,
-            record_offset,
-            content_offset,
-            content_length,
-            status,
-            JSON.stringify(meta),
-        ]);
-    } catch (error) {
-        console.error("Error inserting response:", error);
+        await pool.query(query, values);
+    } catch (error: any) {
+        log("Error inserting response: " + error.message);
         throw error;
     }
-}
+};
 
 // Search for responses in the database
 async function dbWorkerSearchResponses(params: dbSearchResponsesParams): Promise<dbSearchResponseResult[]> {
@@ -167,6 +179,8 @@ async function dbWorkerSearchResponses(params: dbSearchResponsesParams): Promise
 // Retrieve response by URI
 async function dbWorkerRetrieveResponse(uri_string: string): Promise<dbRetrieveResponseResult[]> {
     const client = await connectWorkerPool();
+
+    console.log(`looking for uri`, uri_string)
 
     const query = `
         SELECT * FROM retrieve_response(
@@ -217,9 +231,10 @@ const dbWorkerRetrieveLatestResponses = async (total: number): Promise<dbSearchR
     }
 };
 
+
 // Handle incoming messages
-const handleMessage = async (event: MessageEvent) => {
-    const { id, action, params } = event.data;
+const handleMessage = async (data: { id: number; action: string; params: any }) => {
+    const { id, action, params } = data;
     let response;
 
     try {
@@ -234,6 +249,18 @@ const handleMessage = async (event: MessageEvent) => {
             case 'closeDb':
                 response = { status: 'sucess', data: await closeWorkerDb() };
                 break;
+            
+            case 'dbUpdateFileProgress':
+                const {file, progress} = params;
+                parseWarcFilesProgress[file] = progress;
+                log(`progress: ${JSON.stringify(parseWarcFilesProgress)}`)
+                break;
+
+            case 'dbRetrieveFileProgress':
+                response = { status: 'sucess', data: parseWarcFilesProgress};
+                log(`RETURN progress: ${JSON.stringify(parseWarcFilesProgress)}`)
+                break; 
+
             case 'dbInsertResponse':
                 response = { status: 'sucess', data: await dbWorkerInsertResponse(params) };
                 break;
@@ -254,11 +281,19 @@ const handleMessage = async (event: MessageEvent) => {
             default:
                 response = { status: 'error', message: `Unknown action ${action}` };
         }
-    } catch (e) {
-        response = { status: 'error', message: 'Worker error' };
+    } catch (error: any) {
+        log("Worker error: " + error.message);
+        response = { status: "error", message: error.message };
     }
 
-    postMessage({ id, ...response });
+    return { id, ...response };
 };
 
-self.onmessage = handleMessage;
+// Listen for messages from the parent thread
+self.onmessage = async (event) => {
+    const response = await handleMessage(event.data);
+    postMessage(response);
+};
+
+// Initial log
+log("Hello world!");

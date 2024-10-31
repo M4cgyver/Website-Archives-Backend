@@ -1,14 +1,20 @@
-import express, { Request, Response } from "express";
-import { dbRetrieveLatestResponses } from "../../database";
-import { parseWarcFilesProgress } from "../../warcs";
+import type { BunRequest } from "bunrest/src/server/request";
+import type { BunResponse } from "bunrest/src/server/response";
+import { dbRetrieveFileProgress, dbRetrieveLatestResponses } from "../../database";
 
-export const progress = async (req: Request, res: Response) => {
-    const total = parseInt(req.query.total as string) || 20; // Default to 20 if the total query parameter is not provided
+export const progress = async (req: BunRequest, res: BunResponse) => {
 
+    /*
     try {
         res.json(parseWarcFilesProgress);
     } catch (error) {
         console.error("Error retrieving parsing progress:", error);
         res.status(500).json({ error: "Internal server error" });
     }
+    */
+
+    const dbData = await dbRetrieveFileProgress()
+    console.log(`STATS`, dbData)
+    res.status(200).json(dbData);
+
 };

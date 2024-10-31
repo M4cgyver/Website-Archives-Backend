@@ -1,1 +1,404 @@
-import d from"fs/promises";import{open as b}from"fs/promises";var p=(R)=>{const v=R.split("\r\n"),K=v[0],G=/^HTTP\/(\d+\.\d+)\s+(\d+)\s+(.*)$/,F=K.match(G),A=F?{http:F[1],status:parseInt(F[2],10),message:F[3].trim()}:{};return{...v.slice(1).filter((V)=>V.trim()!=="").reduce((V,J)=>{const Z=J.indexOf(":");if(Z!==-1){const X=J.slice(0,Z).trim().toLowerCase(),q=J.slice(Z+1).trim();return{...V,[X]:q}}return V},{}),...A}};var O=(R,v)=>{const K=v?.skipContent||!1,G=v?.readBufferSize||512n+256n;let F="",A=0n,I=!1;return{[Symbol.asyncIterator](){return{async next(){if(I)return{done:!0,value:void 0};let V=void 0,J,Z,X={recordWarcOffset:0n,recordResponseOffset:0n,recordContentOffset:0n};try{do{let q=F,D=[];X.recordWarcOffset=A-BigInt(q.length);while(D.length<2){const Q=q.split("\r\n\r\n");if(D=Q.length>1?Q:D,D.length<2){const Y=await R(A,G);q+=Y.toString(),A+=G}}J=p(D[0]);const _=J["content-length"]?BigInt(J["content-length"]):0n;if(J["warc-type"]!=="response"||_===0n){const Q=_-BigInt(q.length-D[0].length-4);A+=Q>0n?Q:0n,F=Q<0n?q.slice(q.length+Number(Q)+4):""}else{while(D.length<3){const E=q.split("\r\n\r\n");if(D=E.length>2?E:D,D.length<3){const S=await R(A,G);q+=S.toString(),A+=G}}Z=p(D[1]);const Q=_-BigInt(D[1].length),Y=Q-BigInt(q.length-D[0].length-D[1].length-8);V=K?void 0:Buffer.from(q.slice(D[0].length+D[1].length+8,D[0].length+D[1].length+8+Number(Q))+(Y>0n?(await R(A,Y)).toString():"")),A+=Y>0n?Y:0n,F=Y<0n?q.slice(q.length+Number(Y)+4):"",X.recordResponseOffset=X.recordWarcOffset+BigInt(D[0].length+4),X.recordContentOffset=X.recordResponseOffset+BigInt(D[1].length+4),Z["content-length"]=Q}}while(J&&J["warc-type"]!=="response");if(!J)return I=!0,{done:!0,value:void 0};return{done:!1,value:[J,Z,V,X]}}catch(q){if(q instanceof RangeError)return I=!0,{done:!0,value:void 0};else throw q}}}}}};var U=null,M=new MessageChannel,N=new Map,w=async()=>{if(!U){const R=await Bun.build({entrypoints:["libs/database/worker.tsx"],outdir:"libs/database/build",target:process.env.WORKER_TARGET??"node",minify:!0});U=new Worker(R.outputs[0].path),U.onmessage=(v)=>{const{id:K,status:G,data:F,message:A}=v.data,I=N.get(K);if(I){if(G==="error")I.reject(A);else I.resolve(F);N.delete(K)}}}if(!M)M=new MessageChannel;return{worker:U,channel:M,promises:N}};var{worker:H,promises:z}=await w(),y=(R,v)=>{return new Promise((K,G)=>{const F=process.hrtime()[1];z.set(F,{resolve:K,reject:G}),H.postMessage({id:F,action:R,params:v})})},x=async(R)=>y("connectDb",R);var P=async(R)=>y("dbInsertResponse",R);var j=async()=>{await y("closeDb"),H.terminate(),z.clear()};var T=(R)=>{if(typeof R==="bigint"){if(R>Number.MAX_SAFE_INTEGER||R<Number.MIN_SAFE_INTEGER)throw new Error("BigInt value out of safe Number range");return Number(R)}else if(typeof R==="object"&&R!==null){for(let v in R)if(R.hasOwnProperty(v))R[v]=T(R[v])}return R},k=async(R)=>{const v=await b(R,"r"),G=(await v.stat()).size;return async(F,A)=>{if(F>=G||F+A>G)throw new RangeError("Out of bounds read attempt");const I=Buffer.alloc(Number(A)),{bytesRead:V}=await v.read(I,0,Number(A),Number(F));if(V!==Number(A))throw new Error("Failed to read the expected number of bytes");return I}},c=async(R)=>{const v=O(await k(`warcs/${R}`),{skipContent:!0}),K=[];console.log(`   Parsing ${R}...`);const G=(await d.stat(`warcs/${R}`)).size;let F=0;for await(let[A,I,V,J]of v){const{"warc-type":Z,"warc-record-id":X,"warc-warcinfo-id":q,"warc-concurrent-to":D,"warc-target-uri":_,"warc-date":Q,"warc-ip-address":Y,"warc-block-digest":E,"warc-payload-digest":S,"content-type":o,"content-length":s}=A,{date:i,location:u,"content-type":B,"content-length":g,"last-modified":a,"transfer-encoding":h,status:m}=I,{recordWarcOffset:W,recordResponseOffset:l,recordContentOffset:C}=J,L={uri_string:_.replace(/<|>/g,""),file_string:`warcs/${R}`,content_type_string:B??"application/unknown",resource_type_string:"response",record_length:BigInt(l),record_offset:BigInt(W),content_length:BigInt(g),content_offset:BigInt(C),status:m,meta:T(I)};try{K.push(P(L).then(async()=>{const $=Math.round(Number(W)/G*100);if($>F)F=$,postMessage({file:R,status:"progress",progress:$})}))}catch($){console.log(`Failed to insert record ${$.message}`,L)}}Promise.allSettled(K).then(()=>{console.log(`   Parsed ${R}!`),j().then(()=>{postMessage({file:R,status:"complete"})})})};self.onmessage=(R)=>{console.log("entry");const v=R.data;if(typeof v!=="object"||!("file"in v)){console.log(`WARC Worker, invalid format ${v}`);return}console.log(`WARC Worker: starting to parse file: ${v.file}`),x({max:4}).then(()=>{c(v.file)})};
+// @bun
+// libs/warcs/worker.ts
+import fs from "fs/promises";
+import { open } from "fs/promises";
+
+// libs/mwarcparser/index.tsx
+var mWarcParseHeader = (s) => {
+  const lines = s.split("\r\n");
+  const firstLine = lines[0];
+  const httpRegex = /^HTTP\/(\d+\.\d+)\s+(\d+)\s+(.*)$/;
+  const httpMatches = firstLine.match(httpRegex);
+  const httpHeader = httpMatches ? {
+    http: httpMatches[1],
+    status: parseInt(httpMatches[2], 10),
+    message: httpMatches[3].trim()
+  } : {};
+  const headers = lines.slice(1).filter((line) => line.trim() !== "").reduce((acc, line) => {
+    const index = line.indexOf(":");
+    if (index !== -1) {
+      const key = line.slice(0, index).trim().toLowerCase();
+      const value = line.slice(index + 1).trim();
+      return { ...acc, [key]: value };
+    }
+    return acc;
+  }, {});
+  return { ...headers, ...httpHeader };
+};
+var mWarcParseResponses = (read, options) => {
+  const skipContent = options?.skipContent || false;
+  const readBufferSize = options?.readBufferSize || 512n + 256n;
+  let backbuffer = "";
+  let offset = 0n;
+  let done = false;
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        async next() {
+          if (done) {
+            return { done: true, value: undefined };
+          }
+          let content = undefined;
+          let header;
+          let http;
+          let metadata = {
+            recordWarcOffset: 0n,
+            recordResponseOffset: 0n,
+            recordContentOffset: 0n
+          };
+          try {
+            do {
+              let bufferToParse = backbuffer;
+              let bufferChunks = [];
+              metadata.recordWarcOffset = offset - BigInt(bufferToParse.length);
+              while (bufferChunks.length < 2) {
+                const newChunks = bufferToParse.split("\r\n\r\n");
+                bufferChunks = newChunks.length > 1 ? newChunks : bufferChunks;
+                if (bufferChunks.length < 2) {
+                  const possiblePromise = await read(offset, readBufferSize);
+                  bufferToParse += possiblePromise.toString();
+                  offset += readBufferSize;
+                }
+              }
+              header = mWarcParseHeader(bufferChunks[0]);
+              const contentLength = header["content-length"] ? BigInt(header["content-length"]) : 0n;
+              if (header["warc-type"] !== "response" || contentLength === 0n) {
+                const remainingBytes = contentLength - BigInt(bufferToParse.length - bufferChunks[0].length - 4);
+                offset += remainingBytes > 0n ? remainingBytes : 0n;
+                backbuffer = remainingBytes < 0n ? bufferToParse.slice(bufferToParse.length + Number(remainingBytes) + 4) : "";
+              } else {
+                while (bufferChunks.length < 3) {
+                  const newChunks = bufferToParse.split("\r\n\r\n");
+                  bufferChunks = newChunks.length > 2 ? newChunks : bufferChunks;
+                  if (bufferChunks.length < 3) {
+                    const possiblePromise = await read(offset, readBufferSize);
+                    bufferToParse += possiblePromise.toString();
+                    offset += readBufferSize;
+                  }
+                }
+                http = mWarcParseHeader(bufferChunks[1]);
+                const httpContentLength = contentLength - BigInt(bufferChunks[1].length);
+                const remainingBytes = httpContentLength - BigInt(bufferToParse.length - bufferChunks[0].length - bufferChunks[1].length - 8);
+                content = skipContent ? undefined : Buffer.from(bufferToParse.slice(bufferChunks[0].length + bufferChunks[1].length + 8, bufferChunks[0].length + bufferChunks[1].length + 8 + Number(httpContentLength)) + (remainingBytes > 0n ? (await read(offset, remainingBytes)).toString() : ""));
+                offset += remainingBytes > 0n ? remainingBytes : 0n;
+                backbuffer = remainingBytes < 0n ? bufferToParse.slice(bufferToParse.length + Number(remainingBytes) + 4) : "";
+                metadata.recordResponseOffset = metadata.recordWarcOffset + BigInt(bufferChunks[0].length + 4);
+                metadata.recordContentOffset = metadata.recordResponseOffset + BigInt(bufferChunks[1].length + 4);
+                http["content-length"] = httpContentLength;
+              }
+            } while (header && header["warc-type"] !== "response");
+            if (!header) {
+              done = true;
+              return { done: true, value: undefined };
+            }
+            return {
+              done: false,
+              value: [header, http, content, metadata]
+            };
+          } catch (err) {
+            if (err instanceof RangeError) {
+              done = true;
+              return { done: true, value: undefined };
+            } else {
+              throw err;
+            }
+          }
+        }
+      };
+    }
+  };
+};
+
+// libs/database/types.tsx
+import net from "net";
+var worker = null;
+var promises = new Map;
+var getWorker = async (options) => {
+  if (!worker) {
+    const build = await Bun.build({
+      entrypoints: ["libs/database/worker.tsx"],
+      outdir: "libs/database/build",
+      target: process.env.WORKER_TARGET ?? "node",
+      minify: false
+    });
+    worker = new Worker(build.outputs[0].path);
+    worker.onmessage = (event) => {
+      const { id, status, data, message, action } = event.data;
+      const handlers = promises.get(id);
+      if (action) {
+        if (action == "log") {
+          console.log(`WS-DB: ${message}`);
+        }
+      } else if (handlers) {
+        if (status === "error") {
+          handlers.reject(message);
+        } else {
+          handlers.resolve(data);
+        }
+        promises.delete(id);
+      }
+    };
+  }
+  return { worker, promises };
+};
+var getNetSocket = async (options, promises2) => {
+  const { host, port } = options;
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port }, () => {
+      postMessage({ action: "log", message: `Connected to ${host}:${port}` });
+      resolve({ socket, promises: promises2 });
+    });
+    socket.on("data", (buffer) => {
+      const data = buffer.toString("utf-8");
+      try {
+        const { id, status, data: responseData, message, action } = JSON.parse(data);
+        const handlers = promises2.get(id);
+        if (action) {
+          if (action === "log") {
+            console.log(`WS-NET: ${message}`);
+          }
+        } else if (handlers) {
+          if (status === "error") {
+            handlers.reject(message);
+          } else {
+            handlers.resolve(responseData);
+          }
+          promises2.delete(id);
+        }
+      } catch (error) {
+        postMessage({ action: "log", message: "Failed to parse data: " + error.message });
+      }
+    });
+    socket.on("error", (err) => {
+      postMessage({ action: "log", message: `Socket error: ${err.message}` });
+    });
+    socket.on("end", () => {
+      postMessage({ action: "log", message: "Disconnected from the server" });
+    });
+  });
+};
+
+// libs/genid/index.tsx
+var genid = () => {
+  const timestamp = Date.now();
+  const randomComponent = Math.floor(Math.random() * 1000);
+  return timestamp + randomComponent;
+};
+
+// libs/database/index.tsx
+var worker2 = null;
+var promises2 = new Map;
+var method = null;
+var socket = null;
+var handleSocketMessage = (data) => {
+  const str = `[${data.toString("utf-8").trim().replace(/}{/g, "},{")}]`;
+  const jsonarrstr = JSON.parse(str);
+  jsonarrstr.forEach((responsestr) => {
+    try {
+      const { id, result, error } = responsestr;
+      const promise = promises2.get(id);
+      if (promise) {
+        promises2.delete(id);
+        if (error) {
+          promise.reject(error);
+        } else {
+          promise.resolve(result);
+        }
+      }
+    } catch (err) {
+      console.log(`Error ${err.message}: \r\n` + jsonarrstr + "\r\n" + responsestr);
+    }
+  });
+};
+var sendMessage = (options) => {
+  const { id, action, params } = options;
+  const messageToSend = {
+    id,
+    action,
+    params: params !== undefined ? params : {}
+  };
+  switch (method) {
+    case "post":
+      worker2?.postMessage(messageToSend);
+      break;
+    case "net":
+      if (socket) {
+        socket.write(JSON.stringify(messageToSend, (_, v) => typeof v === "bigint" ? v.toString() : v), (err) => {
+          if (err) {
+            console.error(`Error writing to socket: ${err.message}`);
+          }
+        });
+      }
+      break;
+  }
+};
+var callAction = (action, params) => {
+  return new Promise((resolve, reject) => {
+    const id = genid();
+    promises2.set(id, { resolve, reject });
+    sendMessage({ id, action, params });
+  });
+};
+var dbInsertResponse = async (params) => callAction("dbInsertResponse", params);
+var dbConnectWorker = async () => callAction("connectDb");
+var connectDb = async (params, options) => {
+  const { connType = "post" } = options || {};
+  switch (connType) {
+    case "post":
+      const workerResult = await getWorker();
+      worker2 = workerResult.worker;
+      promises2 = workerResult.promises;
+      method = "post";
+      console.log("Connecting worker");
+      await dbConnectWorker();
+      break;
+    case "net":
+      if (!options?.host || !options?.port) {
+        throw new Error("Host and port must be provided for net connection");
+      }
+      const netSocketResult = await getNetSocket({ host: options.host, port: options.port }, promises2);
+      socket = netSocketResult.socket;
+      promises2 = netSocketResult.promises;
+      method = "net";
+      socket.on("data", handleSocketMessage);
+      socket.on("error", (err) => {
+        console.error(`Socket error: ${err.message}`);
+        promises2.forEach((p) => p.reject(err));
+        promises2.clear();
+      });
+      socket.on("end", () => {
+        console.log("Socket connection closed");
+        socket = null;
+      });
+      break;
+  }
+};
+var closeDb = async () => {
+  switch (method) {
+    case "post":
+      if (worker2) {
+        await callAction("closeDb");
+        worker2.terminate();
+        worker2 = null;
+      }
+      break;
+    case "net":
+      if (socket) {
+        socket.destroy();
+        socket = null;
+      }
+      break;
+  }
+  promises2.clear();
+};
+
+// libs/warcs/worker.ts
+var promises3 = [];
+var promiseRets = new Map;
+var convertBigIntToNumber = (obj) => {
+  if (typeof obj === "bigint") {
+    if (obj > Number.MAX_SAFE_INTEGER || obj < Number.MIN_SAFE_INTEGER) {
+      throw new Error("BigInt value out of safe Number range");
+    }
+    return Number(obj);
+  } else if (typeof obj === "object" && obj !== null) {
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        obj[key] = convertBigIntToNumber(obj[key]);
+      }
+    }
+  }
+  return obj;
+};
+var readFile = async (filename) => {
+  const fd = await open(filename, "r");
+  const fileStats = await fd.stat();
+  const fileSize = fileStats.size;
+  return async (offset, size) => {
+    if (offset >= fileSize || offset + size > fileSize) {
+      throw new RangeError("Out of bounds read attempt");
+    }
+    const buffer = Buffer.alloc(Number(size));
+    const { bytesRead } = await fd.read(buffer, 0, Number(size), Number(offset));
+    if (bytesRead !== Number(size)) {
+      throw new Error("Failed to read the expected number of bytes");
+    }
+    return buffer;
+  };
+};
+var parseWarcFile = async (file) => {
+  const warc = mWarcParseResponses(await readFile(`warcs/${file}`), { skipContent: true });
+  console.log(`   Parsing ${file}...`);
+  const fileSize = (await fs.stat(`warcs/${file}`)).size;
+  let lastPercent = 0;
+  for await (const [header, http, content, metadata] of warc) {
+    const {
+      "warc-type": warcType,
+      "warc-record-id": recordId,
+      "warc-warcinfo-id": warcinfoId,
+      "warc-concurrent-to": concurrentTo,
+      "warc-target-uri": targetUri,
+      "warc-date": warcDate,
+      "warc-ip-address": ipAddress,
+      "warc-block-digest": blockDigest,
+      "warc-payload-digest": payloadDigest,
+      "content-type": contentType,
+      "content-length": contentLength
+    } = header;
+    const {
+      date,
+      location,
+      "content-type": responseType,
+      "content-length": responseContentLength,
+      "last-modified": lastModified,
+      "transfer-encoding": transferEncoding,
+      status
+    } = http;
+    const { recordWarcOffset, recordResponseOffset, recordContentOffset } = metadata;
+    const recordData = {
+      uri_string: targetUri.replace(/<|>/g, ""),
+      file_string: `warcs/${file}`,
+      content_type_string: responseType ?? "application/unknown",
+      resource_type_string: "response",
+      record_length: BigInt(recordResponseOffset),
+      record_offset: BigInt(recordWarcOffset),
+      content_length: BigInt(responseContentLength),
+      content_offset: BigInt(recordContentOffset),
+      status,
+      meta: convertBigIntToNumber(http)
+    };
+    try {
+      promises3.push(dbInsertResponse(recordData).then(async () => {
+        const percent = Math.round(Number(recordWarcOffset) / fileSize * 100);
+        if (percent > lastPercent) {
+          lastPercent = percent;
+          postMessage({ file, status: "progress", progress: percent });
+        }
+      }));
+    } catch (e) {
+      console.log(`Failed to insert record ${e.message}`, recordData);
+    }
+    promises3.push(new Promise((resolve, reject) => {
+      const id = genid();
+      promiseRets.set(id, { resolve, reject });
+    }));
+  }
+  Promise.allSettled(promises3).then(() => {
+    console.log(`   Parsed ${file}!`);
+    closeDb().then(() => {
+      postMessage({ file, status: "complete" });
+    });
+  });
+};
+self.onmessage = async (event) => {
+  console.log("entry");
+  const data = event.data;
+  const { file, channel } = data;
+  if (typeof data !== "object" || !file) {
+    console.log(`WARC Worker, invalid format ${data}`);
+    return;
+  }
+  await connectDb(undefined, { connType: "net", host: "127.0.0.1", port: 9824 });
+  console.log(`WARC Worker: starting to parse file: ${file} ${channel}`);
+  parseWarcFile(data.file);
+};

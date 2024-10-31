@@ -1,9 +1,10 @@
 import { MultiProgressBars } from 'multi-progress-bars';
 import fs from 'fs/promises';
 import type { Target } from 'bun';
+import { dbUpdateFileProgress } from '../database';
 const progressType: string = process.env.WARC_PROCESSING_STATUS ?? "bar";
 
-export const parseWarcFilesProgress: Record<string, number> = {};
+//export const parseWarcFilesProgress: Record<string, number> = {};
 
 export const parseWarcFiles = async () => {
     /*
@@ -104,9 +105,14 @@ export const parseWarcFiles = async () => {
         .map(file => file.file);
 
 
-    fileSorted.forEach((file: string) => {
-        parseWarcFilesProgress[file] = 0;
-    })
+    //fileSorted.forEach((file: string) => {
+    //    parseWarcFilesProgress[file] = 0;
+    //})
+
+    Promise.allSettled(fileSorted.map(async (file: string) => {
+        await dbUpdateFileProgress({file, progress: 0}) 
+    }))
+
 
     const mpd = (progressType === "bar") ? new MultiProgressBars({
         initMessage: "$ Parsing files...",
@@ -137,9 +143,11 @@ export const parseWarcFiles = async () => {
     const build = await Bun.build({
         entrypoints: ['libs/warcs/worker.ts'],
         outdir: 'libs/warcs/build',
-        target: (process.env.WORKER_TARGET as Target) ?? "node",
-        minify: true,
+        target: "bun",
+        minify: false,
     })
+
+    console.log("built libs/warcs/worker.ts'", build)
 
     //BUG: wierd perms with docker prevent worker from working, load manually
     const blob = await Bun.file(build.outputs[0].path);
@@ -157,11 +165,12 @@ export const parseWarcFiles = async () => {
         }
         //const worker = new Worker(new URL("./build/worker.js", import.meta.url).href);
 
-        worker.onmessage = event => {
+        worker.onmessage = async event => {
             const { file, status, progress, data } = event.data;
 
             if (status == "progress") {
-                parseWarcFilesProgress[file] = progress;
+                //parseWarcFilesProgress[file] = progress;
+                await dbUpdateFileProgress({file, progress: progress})
 
                 if (mpd)
                     mpd.updateTask(file, { percentage: progress / 100 })
@@ -169,7 +178,7 @@ export const parseWarcFiles = async () => {
                     console.log(`${file} processed ${progress}`)
             }
             else if (status == "complete") {
-                parseWarcFilesProgress[file] = 100;
+                await dbUpdateFileProgress({file, progress: 100}) 
 
                 if (mpd)
                     mpd.updateTask(file, { percentage: 1 })
@@ -186,7 +195,7 @@ export const parseWarcFiles = async () => {
 
         console.log(`Queueing worker for file ${file}...`)
 
-        worker.postMessage({ file: file });
+        worker.postMessage({ file: file } );
         workers.push(worker);
 
         return worker;
