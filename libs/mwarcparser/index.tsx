@@ -105,7 +105,9 @@ export const mWarcParse = (
                             done = true;
                             return { done: true, value: undefined };
                         } else {
-                            throw err;
+                            console.log("Different wierd error")
+                            done = true;
+                            return { done: true, value: undefined };
                         }
                     }
                 }
