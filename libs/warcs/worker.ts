@@ -40,7 +40,7 @@ const readFile = async (filename: string): Promise<mWarcReadFunction> => {
         const buffer = Buffer.alloc(Number(size));
         const { bytesRead } = await fd.read(buffer, 0, Number(size), Number(offset));
         if (bytesRead !== Number(size)) {
-            throw new Error('Failed to read the expected number of bytes');
+            throw new RangeError('Failed to read the expected number of bytes');
         }
         return buffer;
     };
@@ -122,8 +122,6 @@ const parseWarcFile = async (file: string) => {
         });
     }
 };
-
-
 
 self.onmessage = async (event: MessageEvent) => {
     console.log("entry");
