@@ -14,11 +14,14 @@ export const view = async (req: BunRequest, res: BunResponse) => {
     console.log(`WS-EXPRESS ${id}: Requesting to view: ${uri}`);
 
     if (!uri) {
+        console.error(`WS-EXPRESS ${id}: "Missing query parameter: uri - ${uri}`);
         return res.status(400).json({ error: "Missing query parameter: uri", data: {path: req.path, uri: req.query}});
     }
 
     try {
         const datares = await dbRetrieveResponse(uri);
+
+        console.log(`WS-EXPRESS ${id}: Found record ~ `, uri, datares);
 
         if (!datares) {
             //No data from db?????????????/
@@ -41,7 +44,7 @@ export const view = async (req: BunRequest, res: BunResponse) => {
             meta_r: meta,
         } = record;
 
-        console.log(`WS-EXPRESS ${id}: found record: ${record}`);
+        console.log(`WS-EXPRESS ${id}: found record: ${/*record*/""}`);
 
         const { location, 'transfer-encoding': transferEncoding } = meta || {};
 

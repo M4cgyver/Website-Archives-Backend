@@ -1,5 +1,8 @@
 import { Transform } from 'stream';
 import { hexToBn } from '../bignumber';
+import fs from "fs"
+import { createHash } from "crypto"
+import { Readable as NodeReadable } from 'stream';
 
 export type mWarcHeaderMap = { [key: string]: any };
 export type mWarcReadFunction = (offset: bigint, size: bigint) => Promise<Buffer>;
@@ -41,7 +44,7 @@ export const mWarcParseHeader = (s: string): mWarcHeaderMap => {
             return acc;
         }, {});
 
-    return { ...headers, ...httpHeader} ;
+    return { ...headers, ...httpHeader };
 };
 
 export const mWarcParse = (
@@ -258,11 +261,10 @@ export const mWarcParseResponses = (
     };
 };
 
-
 export const mWarcParseResponseContent = (
-    content: NodeJS.ReadableStream,
+    content: NodeReadable,
     transferEncoding: string | "chunked" | "compress" | "deflate" | "gzip" | undefined
-): NodeJS.ReadableStream => {
+): NodeReadable=> {
 
     switch (transferEncoding) {
         case "chunked": //FUCK THIS PIECE OF SHIT
@@ -312,13 +314,65 @@ export const mWarcParseResponseContent = (
             }
 
             return content.pipe(new Transform({
-                transform(chunk: string | Buffer, encoding: string, callback) {
-                    callback(null, chunkPromise(chunk));
+                async transform(chunk, encoding, callback) {
+                    try {
+                        // Wait for the chunkPromise to resolve
+                        const result = await chunkPromise(chunk);
+                        // Pass the result to the callback
+                        callback(null, result);
+                    } catch (error:any) {
+                        // Handle any errors by passing them to the callback
+                        callback(error);
+                    }
                 }
             }));
+            
 
         default:
             return content;
     }
 
 }
+
+export const mWarcParseEtag = (
+    content: Buffer | NodeReadable | fs.ReadStream | globalThis.ReadableStream<Uint8Array>
+): Promise<string> => {
+    const hasher = new Bun.CryptoHasher("sha256"); // Initialize CryptoHasher with SHA-256
+
+    return new Promise((resolve, reject) => {
+        if (Buffer.isBuffer(content)) {
+            // Handle Buffer case
+            hasher.update(content);
+            resolve(`"${hasher.digest("hex")}"`); // Digest and convert to hex string
+        } else if (content instanceof NodeReadable) {
+            // Handle NodeJS.ReadableStream case
+            content.on('data', (chunk: Buffer) => hasher.update(chunk));
+            content.on('end', () => resolve(`"${hasher.digest("hex")}"`)); // Digest on end
+            content.on('error', reject);
+        } else if (content instanceof fs.ReadStream) {
+            // Handle fs.ReadStream case
+            content.on('data', (chunk: Buffer) => hasher.update(chunk));
+            content.on('end', () => resolve(`"${hasher.digest("hex")}"`)); // Digest on end
+            content.on('error', reject);
+        } else if (content instanceof globalThis.ReadableStream) {
+            // Handle Web ReadableStream case
+            const reader = content.getReader();
+            const read = async (): Promise<void> => {
+                try {
+                    const { done, value } = await reader.read();
+                    if (done) {
+                        resolve(`"${hasher.digest("hex")}"`); // Digest on done
+                    } else if (value) {
+                        hasher.update(Buffer.from(value)); // Update with the chunk
+                        read(); // Continue reading
+                    }
+                } catch (error) {
+                    reject(error);
+                }
+            };
+            read(); // Start reading
+        } else {
+            reject(new Error('Unsupported content type'));
+        }
+    });
+};

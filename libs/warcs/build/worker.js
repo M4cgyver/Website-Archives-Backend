@@ -1,9 +1,32 @@
 // @bun
 // libs/warcs/worker.ts
-import fs from "fs/promises";
+import fs2 from "fs/promises";
 import { open } from "fs/promises";
 
 // libs/mwarcparser/index.tsx
+import { Transform } from "stream";
+
+// libs/bignumber/index.tsx
+function hexToBn(hex, options) {
+  const unsigned = options?.unsigned ?? false;
+  if (hex.length % 2 || hex.length === 0) {
+    hex = "0" + hex;
+  }
+  const bn = BigInt("0x" + hex);
+  if (unsigned) {
+    return bn;
+  }
+  const highByte = parseInt(hex.slice(0, 2), 16);
+  if (highByte >= 128) {
+    const flipped = bn ^ (1n << BigInt(hex.length * 4)) - 1n;
+    return -flipped - 1n;
+  }
+  return bn;
+}
+
+// libs/mwarcparser/index.tsx
+import fs from "fs";
+import { Readable as NodeReadable } from "stream";
 var mWarcParseHeader = (s) => {
   const lines = s.split("\r\n");
   const firstLine = lines[0];
@@ -96,6 +119,7 @@ var mWarcParseResponses = (read, options) => {
               value: [header, http, content, metadata]
             };
           } catch (err) {
+            console.error("Error encountered:", err);
             if (err instanceof RangeError) {
               done = true;
               return { done: true, value: undefined };
@@ -107,6 +131,88 @@ var mWarcParseResponses = (read, options) => {
       };
     }
   };
+};
+var mWarcParseResponseContent = (content, transferEncoding) => {
+  switch (transferEncoding) {
+    case "chunked":
+      let chHex = "";
+      let chOffset = 0n;
+      let chPosition = 0n;
+      const chunkPromise = (chunk) => {
+        let filtered = "";
+        if (chOffset > BigInt(chunk.length)) {
+          chOffset -= BigInt(chunk.length);
+          return chunk;
+        }
+        chPosition = chOffset;
+        while (chPosition < chunk.length) {
+          const chHexC = chunk instanceof Buffer ? String.fromCharCode(chunk[Number(chPosition)]) : typeof chunk === "string" ? chunk.charAt(Number(chPosition)) : "";
+          chHex += chHexC;
+          chPosition++;
+          if (chHex.endsWith("\r\n") && chHex !== "0\r\n") {
+            chOffset = hexToBn(chHex.slice(0, chHex.length - 2), { unsigned: true });
+            const startSlice = chPosition;
+            const endSlice = chPosition + chOffset;
+            const slice = chunk.slice(Number(startSlice), Number(endSlice));
+            filtered += slice.toString();
+            chPosition += chOffset + 2n;
+            const rem = chunk.length - Number(chPosition);
+            chOffset -= BigInt(slice.length) - 2n;
+            chHex = "";
+          } else if (chHex.endsWith("\r\n") && chHex === "0\r\n") {
+            break;
+          }
+        }
+        return filtered;
+      };
+      return content.pipe(new Transform({
+        async transform(chunk, encoding, callback) {
+          try {
+            const result = await chunkPromise(chunk);
+            callback(null, result);
+          } catch (error) {
+            callback(error);
+          }
+        }
+      }));
+    default:
+      return content;
+  }
+};
+var mWarcParseEtag = (content) => {
+  const hasher = new Bun.CryptoHasher("sha256");
+  return new Promise((resolve, reject) => {
+    if (Buffer.isBuffer(content)) {
+      hasher.update(content);
+      resolve(`"${hasher.digest("hex")}"`);
+    } else if (content instanceof NodeReadable) {
+      content.on("data", (chunk) => hasher.update(chunk));
+      content.on("end", () => resolve(`"${hasher.digest("hex")}"`));
+      content.on("error", reject);
+    } else if (content instanceof fs.ReadStream) {
+      content.on("data", (chunk) => hasher.update(chunk));
+      content.on("end", () => resolve(`"${hasher.digest("hex")}"`));
+      content.on("error", reject);
+    } else if (content instanceof globalThis.ReadableStream) {
+      const reader = content.getReader();
+      const read = async () => {
+        try {
+          const { done, value } = await reader.read();
+          if (done) {
+            resolve(`"${hasher.digest("hex")}"`);
+          } else if (value) {
+            hasher.update(Buffer.from(value));
+            read();
+          }
+        } catch (error) {
+          reject(error);
+        }
+      };
+      read();
+    } else {
+      reject(new Error("Unsupported content type"));
+    }
+  });
 };
 
 // libs/database/types.tsx
@@ -195,14 +301,14 @@ var handleSocketMessage = (data) => {
   const jsonarrstr = JSON.parse(str);
   jsonarrstr.forEach((responsestr) => {
     try {
-      const { id, result, error } = responsestr;
+      const { id, result, status, error, message, data: data2 } = responsestr;
       const promise = promises2.get(id);
       if (promise) {
         promises2.delete(id);
-        if (error) {
-          promise.reject(error);
+        if (status !== "sucess") {
+          promise.reject(message);
         } else {
-          promise.resolve(result);
+          promise.resolve(data2);
         }
       }
     } catch (err) {
@@ -293,7 +399,6 @@ var closeDb = async () => {
 };
 
 // libs/warcs/worker.ts
-var promises3 = [];
 var promiseRets = new Map;
 var convertBigIntToNumber = (obj) => {
   if (typeof obj === "bigint") {
@@ -321,74 +426,89 @@ var readFile = async (filename) => {
     const buffer = Buffer.alloc(Number(size));
     const { bytesRead } = await fd.read(buffer, 0, Number(size), Number(offset));
     if (bytesRead !== Number(size)) {
-      throw new Error("Failed to read the expected number of bytes");
+      throw new RangeError("Failed to read the expected number of bytes");
     }
     return buffer;
   };
 };
 var parseWarcFile = async (file) => {
-  const warc = mWarcParseResponses(await readFile(`warcs/${file}`), { skipContent: true });
+  const fileDir = `warcs/${file}`;
+  const fd = await open(fileDir, "r");
+  const warc = mWarcParseResponses(await readFile(fileDir), { skipContent: true });
   console.log(`   Parsing ${file}...`);
-  const fileSize = (await fs.stat(`warcs/${file}`)).size;
+  const fileSize = (await fs2.stat(fileDir)).size;
   let lastPercent = 0;
-  for await (const [header, http, content, metadata] of warc) {
-    const {
-      "warc-type": warcType,
-      "warc-record-id": recordId,
-      "warc-warcinfo-id": warcinfoId,
-      "warc-concurrent-to": concurrentTo,
-      "warc-target-uri": targetUri,
-      "warc-date": warcDate,
-      "warc-ip-address": ipAddress,
-      "warc-block-digest": blockDigest,
-      "warc-payload-digest": payloadDigest,
-      "content-type": contentType,
-      "content-length": contentLength
-    } = header;
-    const {
-      date,
-      location,
-      "content-type": responseType,
-      "content-length": responseContentLength,
-      "last-modified": lastModified,
-      "transfer-encoding": transferEncoding,
-      status
-    } = http;
-    const { recordWarcOffset, recordResponseOffset, recordContentOffset } = metadata;
-    const recordData = {
-      uri_string: targetUri.replace(/<|>/g, ""),
-      file_string: `warcs/${file}`,
-      content_type_string: responseType ?? "application/unknown",
-      resource_type_string: "response",
-      record_length: BigInt(recordResponseOffset),
-      record_offset: BigInt(recordWarcOffset),
-      content_length: BigInt(responseContentLength),
-      content_offset: BigInt(recordContentOffset),
-      status,
-      meta: convertBigIntToNumber(http)
-    };
-    try {
+  const promises3 = [];
+  try {
+    for await (const [header, http, content, metadata] of warc) {
+      const {
+        "warc-type": warcType,
+        "warc-record-id": recordId,
+        "warc-warcinfo-id": warcinfoId,
+        "warc-concurrent-to": concurrentTo,
+        "warc-target-uri": targetUri,
+        "warc-date": warcDate,
+        "warc-ip-address": ipAddress,
+        "warc-block-digest": blockDigest,
+        "warc-payload-digest": payloadDigest,
+        "content-type": contentType,
+        "content-length": contentLength
+      } = header;
+      const { recordWarcOffset, recordResponseOffset, recordContentOffset } = metadata;
+      const {
+        date,
+        location,
+        "content-type": responseType,
+        "content-length": responseContentLength,
+        "last-modified": lastModified,
+        "transfer-encoding": transferEncoding,
+        status
+      } = http;
+      const etag = await mWarcParseEtag(mWarcParseResponseContent(fd.createReadStream({
+        start: Number(recordContentOffset),
+        end: Number(recordContentOffset) + Number(responseContentLength) - 1
+      }), transferEncoding)).catch((e) => {
+        console.log(`Failed to parse etag for record ${e.message}`, targetUri);
+      });
+      if (!etag)
+        continue;
+      const recordData = {
+        uri_string: targetUri.replace(/<|>/g, ""),
+        file_string: `warcs/${file}`,
+        content_type_string: responseType ?? "application/unknown",
+        resource_type_string: "response",
+        record_length: BigInt(recordResponseOffset),
+        record_offset: BigInt(recordWarcOffset),
+        content_length: BigInt(responseContentLength),
+        content_offset: BigInt(recordContentOffset),
+        status,
+        meta: convertBigIntToNumber(http)
+      };
       promises3.push(dbInsertResponse(recordData).then(async () => {
         const percent = Math.round(Number(recordWarcOffset) / fileSize * 100);
         if (percent > lastPercent) {
           lastPercent = percent;
           postMessage({ file, status: "progress", progress: percent });
         }
+      }).catch((e) => {
+        console.log(`Failed to insert record ${e.message}`, recordData);
       }));
-    } catch (e) {
-      console.log(`Failed to insert record ${e.message}`, recordData);
     }
-    promises3.push(new Promise((resolve, reject) => {
-      const id = genid();
-      promiseRets.set(id, { resolve, reject });
-    }));
-  }
-  Promise.allSettled(promises3).then(() => {
-    console.log(`   Parsed ${file}!`);
-    closeDb().then(() => {
-      postMessage({ file, status: "complete" });
+  } catch (error) {
+    if (error instanceof RangeError) {
+      console.log("RangeError encountered, exiting parsing loop.");
+    } else {
+      console.error("An unexpected error occurred:", error);
+      throw error;
+    }
+  } finally {
+    await Promise.allSettled(promises3).then(() => {
+      console.log(`   Parsed ${file}!`);
+      closeDb().then(() => {
+        postMessage({ file, status: "complete" });
+      });
     });
-  });
+  }
 };
 self.onmessage = async (event) => {
   console.log("entry");

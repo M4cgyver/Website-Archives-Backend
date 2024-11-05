@@ -1,6 +1,7 @@
+import { createReadStream } from 'fs';
 import fs from 'fs/promises';
 import { open } from 'fs/promises';
-import { mWarcParseResponses, type mWarcReadFunction } from '../mwarcparser';
+import { mWarcParseEtag, mWarcParseResponseContent, mWarcParseResponses, type mWarcReadFunction } from '../mwarcparser';
 import { closeDb, connectDb, dbInsertResponse } from '../database';
 import { genid } from '../genid';
 
@@ -46,11 +47,16 @@ const readFile = async (filename: string): Promise<mWarcReadFunction> => {
     };
 };
 
+
+
 const parseWarcFile = async (file: string) => {
-    const warc = mWarcParseResponses(await readFile(`warcs/${file}`), { skipContent: true });
+
+    const fileDir = `warcs/${file}`;
+    const fd = await open(fileDir, 'r');
+    const warc = mWarcParseResponses(await readFile(fileDir), { skipContent: true });
     console.log(`   Parsing ${file}...`);
 
-    const fileSize = (await fs.stat(`warcs/${file}`)).size;
+    const fileSize = (await fs.stat(fileDir)).size;
     let lastPercent = 0;
     const promises: Promise<void>[] = []; // Array to hold all db insert promises
 
@@ -70,6 +76,8 @@ const parseWarcFile = async (file: string) => {
                 "content-length": contentLength
             } = header;
 
+            const { recordWarcOffset, recordResponseOffset, recordContentOffset } = metadata;
+
             const {
                 date,
                 location,
@@ -80,7 +88,16 @@ const parseWarcFile = async (file: string) => {
                 status
             } = http;
 
-            const { recordWarcOffset, recordResponseOffset, recordContentOffset } = metadata;
+            const etag = /* (http["etag"] as string | undefined) ?? */ await mWarcParseEtag(mWarcParseResponseContent(fd.createReadStream({
+                start: Number(recordContentOffset),
+                end: Number(recordContentOffset) + Number(responseContentLength) - 1,
+            }), transferEncoding)).catch((e:any)=>{
+                console.log(`Failed to parse etag for record ${e.message}`, targetUri);
+            });
+
+            //console.log(etag);
+
+            if(!etag) continue;
 
             const recordData = {
                 uri_string: targetUri.replace(/<|>/g, ''),
@@ -92,7 +109,7 @@ const parseWarcFile = async (file: string) => {
                 content_length: BigInt(responseContentLength),
                 content_offset: BigInt(recordContentOffset),
                 status: status,
-                meta: convertBigIntToNumber(http)
+                meta: convertBigIntToNumber(http),
             };
 
             promises.push(dbInsertResponse(recordData).then(async () => {

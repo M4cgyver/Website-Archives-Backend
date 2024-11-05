@@ -4526,16 +4526,27 @@ var setupWorkerDbSocket = () => {
 var connectWorkerPool = async (config) => {
   const conf = { ...dbConfig, ...config };
   if (!globalDbPool) {
-    try {
-      log(`Creating a new pool at ${timet}`);
-      globalDbPool = new import_pg.Pool(conf);
-      globalDbPool.on("error", (err) => {
-        log(`Database error: ${err.message}`);
-      });
-    } catch (e) {
-      log("Failed to connect: " + e.message);
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-      return connectWorkerPool(config);
+    let attempts = 0;
+    const maxAttempts = 10;
+    while (attempts < maxAttempts) {
+      try {
+        log(`Creating a new pool at ${timet}`);
+        globalDbPool = new import_pg.Pool(conf);
+        globalDbPool.on("error", (err) => {
+          log(`Database error: ${err.message}`);
+        });
+        return globalDbPool;
+      } catch (e) {
+        attempts++;
+        log(`Failed to connect (Attempt ${attempts}): ${e.message}`);
+        if (attempts < maxAttempts) {
+          log(`Retrying in 3 seconds...`);
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+        } else {
+          log(`Max attempts reached. Unable to connect to the database.`);
+          throw e;
+        }
+      }
     }
   }
   return globalDbPool;
@@ -4634,7 +4645,6 @@ async function dbWorkerSearchResponses(params) {
 }
 async function dbWorkerRetrieveResponse(uri_string) {
   const client = await connectWorkerPool();
-  console.log(`looking for uri`, uri_string);
   const query = `
         SELECT * FROM retrieve_response(
             \$1
@@ -4691,11 +4701,9 @@ var handleMessage = async (data) => {
       case "dbUpdateFileProgress":
         const { file, progress } = params;
         parseWarcFilesProgress[file] = progress;
-        log(`progress: ${JSON.stringify(parseWarcFilesProgress)}`);
         break;
       case "dbRetrieveFileProgress":
         response = { status: "sucess", data: parseWarcFilesProgress };
-        log(`RETURN progress: ${JSON.stringify(parseWarcFilesProgress)}`);
         break;
       case "dbInsertResponse":
         response = { status: "sucess", data: await dbWorkerInsertResponse(params) };

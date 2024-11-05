@@ -38,7 +38,7 @@ const setupWorkerDbSocket = () => {
                 //const response = await handleMessage(JSON.parse(data.toString("utf-8")));
                 //socket.write(JSON.stringify(response) + "\n");
                 const arr = JSON.parse(jsonarrstr);
-                arr.forEach((data:any) => handleMessage(data).then(ret=>socket.write(JSON.stringify(ret))));
+                arr.forEach((data: any) => handleMessage(data).then(ret => socket.write(JSON.stringify(ret))));
             } catch (error: any) {
                 log("Error handling message: " + error.message + "\r\n" + data.toString("utf-8") + "\r\n" + jsonarrstr);
                 socket.write(JSON.stringify({ status: "error", message: error.message }) + "\n");
@@ -58,20 +58,34 @@ const connectWorkerPool = async (config?: PoolConfig): Promise<Pool> => {
     const conf = { ...dbConfig, ...config };
 
     if (!globalDbPool) {
-        try {
-            log(`Creating a new pool at ${timet}`);
-            globalDbPool = new Pool(conf);
+        let attempts = 0;
+        const maxAttempts = 10; // Set a maximum number of attempts
 
-            globalDbPool.on("error", (err: Error) => {
-                log(`Database error: ${err.message}`);
-            });
-        } catch (e: any) {
-            log("Failed to connect: " + e.message);
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            return connectWorkerPool(config);
+        while (attempts < maxAttempts) {
+            try {
+                log(`Creating a new pool at ${timet}`);
+                globalDbPool = new Pool(conf);
+
+                globalDbPool.on("error", (err: Error) => {
+                    log(`Database error: ${err.message}`);
+                });
+
+                return globalDbPool; // Return the pool if successful
+            } catch (e: any) {
+                attempts++;
+                log(`Failed to connect (Attempt ${attempts}): ${e.message}`);
+                if (attempts < maxAttempts) {
+                    log(`Retrying in 3 seconds...`);
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                } else {
+                    log(`Max attempts reached. Unable to connect to the database.`);
+                    throw e; // Optionally throw the error after max attempts
+                }
+            }
         }
     }
-    return globalDbPool;
+    
+    return globalDbPool; // Return the existing pool if it was created successfully
 };
 
 // Establish a connection and start the server
@@ -180,7 +194,7 @@ async function dbWorkerSearchResponses(params: dbSearchResponsesParams): Promise
 async function dbWorkerRetrieveResponse(uri_string: string): Promise<dbRetrieveResponseResult[]> {
     const client = await connectWorkerPool();
 
-    console.log(`looking for uri`, uri_string)
+    //console.log(`looking for uri`, uri_string)
 
     const query = `
         SELECT * FROM retrieve_response(
@@ -237,6 +251,8 @@ const handleMessage = async (data: { id: number; action: string; params: any }) 
     const { id, action, params } = data;
     let response;
 
+    //log(`action ${action}`)
+
     try {
         switch (action) {
             case 'connectDb':
@@ -249,17 +265,17 @@ const handleMessage = async (data: { id: number; action: string; params: any }) 
             case 'closeDb':
                 response = { status: 'sucess', data: await closeWorkerDb() };
                 break;
-            
+
             case 'dbUpdateFileProgress':
-                const {file, progress} = params;
+                const { file, progress } = params;
                 parseWarcFilesProgress[file] = progress;
                 //log(`progress: ${JSON.stringify(parseWarcFilesProgress)}`)
                 break;
 
             case 'dbRetrieveFileProgress':
-                response = { status: 'sucess', data: parseWarcFilesProgress};
-                ///log(`RETURN progress: ${JSON.stringify(parseWarcFilesProgress)}`)
-                break; 
+                response = { status: 'sucess', data: parseWarcFilesProgress };
+                //log(`RETURN progress: ${JSON.stringify(parseWarcFilesProgress)}`)
+                break;
 
             case 'dbInsertResponse':
                 response = { status: 'sucess', data: await dbWorkerInsertResponse(params) };
@@ -285,6 +301,8 @@ const handleMessage = async (data: { id: number; action: string; params: any }) 
         log("Worker error: " + error.message);
         response = { status: "error", message: error.message };
     }
+
+    //log(`action ${action} ${response}`)
 
     return { id, ...response };
 };

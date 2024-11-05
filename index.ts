@@ -7,9 +7,11 @@ import { getWorker } from "./libs/database/types";
 
 console.log("starting api");
 
-await connectDb();
-await setupDb();
+if (!process.argv.includes('--listen')) {
+    await connectDb();
+    await setupDb();
 
-parseWarcFiles();
+    parseWarcFiles();
 
-await setupExpressWithWorkers();
+    await setupExpressWithWorkers();
+}

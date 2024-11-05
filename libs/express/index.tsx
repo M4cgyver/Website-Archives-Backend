@@ -77,3 +77,14 @@ if (args.includes("listen")) {
 } else {
     console.debug(`WS-EXPRESS ${id}:Listening not initiated. No 'listen' argument found.`);
 }
+
+function kill() {
+    workers.forEach(bun => 
+        "kill" in bun && typeof bun.kill === "function" ? bun.kill() : 
+        "terminate" in bun && typeof bun.terminate === "function" && bun.terminate()
+    );
+}
+
+// Set up the signal handlers
+process.on("SIGINT", kill);
+process.on("exit", kill);

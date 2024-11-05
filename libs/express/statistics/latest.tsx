@@ -5,6 +5,8 @@ import { dbRetrieveLatestResponses } from "../../database"; // Adjust the import
 export const latest = (req: BunRequest, res: BunResponse) => {
     const total = parseInt(req.query.total as string) || 20; // Default to 20 if the total query parameter is not provided
 
+    console.log(`WS-EXPRESS ${process.pid}: Getting latest archived sites...`)
+
     return dbRetrieveLatestResponses(total)
         .then(latestResponses => {
             res.json(latestResponses);

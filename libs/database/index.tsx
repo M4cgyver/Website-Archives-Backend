@@ -27,15 +27,18 @@ const handleSocketMessage = (data: Buffer) => {
     jsonarrstr.forEach((responsestr:any) => {
         try {
             //console.log(responsestr)
-            const { id, result, error } = responsestr;
+            const { id, result, status, error, message, data } = responsestr;
     
+            //console.log(responsestr);
+            
             const promise = promises.get(id);
             if (promise) {
                 promises.delete(id);
-                if (error) {
-                    promise.reject(error);
+
+                if (status !== "sucess") {
+                    promise.reject(message);
                 } else {
-                    promise.resolve(result);
+                    promise.resolve(data);
                 }
             }
 
@@ -55,6 +58,8 @@ const sendMessage = (options: { id: number; action: string; params?: any }) => {
         action,
         params: params !== undefined ? params : {}, // Set to null if undefined
     };
+
+    //console.log("sending message to db", options)
 
     switch (method) {
         case "post":
@@ -76,6 +81,7 @@ const sendMessage = (options: { id: number; action: string; params?: any }) => {
 
 
 const callAction = (action: string, params?: any): Promise<any> => {
+    //console.log("callAction", action, params)
     return new Promise((resolve, reject) => {
         const id = genid(); // Unique ID for each request
         promises.set(id, { resolve, reject });

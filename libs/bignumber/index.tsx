@@ -1,4 +1,6 @@
 export function hexToBn(hex: string, options?: { unsigned?: boolean }): bigint {
+    //console.trace(hex);
+
     const unsigned = options?.unsigned ?? false;
 
     if (hex.length % 2 || hex.length === 0) {
